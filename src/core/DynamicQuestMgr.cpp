@@ -19,6 +19,7 @@
 #include "QueryResult.h"
 #include "Creature.h"
 #include "DatabaseEnv.h"
+#include "GameObject.h"
 #include "GameTime.h"
 #include "Log.h"
 #include "Map.h"
@@ -60,6 +61,24 @@ static DQZoneFaction GetZoneFaction(uint32 zoneId, uint32 areaId)
     DQZoneFaction zf = classify(zoneId);
     if (zf != DQ_FACTION_ANY) return zf;
     return classify(areaId); // fallback: check sub-area (Silvermoon, Exodar sub-areas)
+}
+
+// Splits a comma-separated tag expression (e.g. "humanoid,male,peasant") into a vector.
+static std::vector<std::string> SplitTags(const std::string& tagExpr)
+{
+    std::vector<std::string> out;
+    if (tagExpr.empty())
+        return out;
+    std::istringstream ss(tagExpr);
+    std::string tok;
+    while (std::getline(ss, tok, ','))
+    {
+        size_t l = tok.find_first_not_of(' ');
+        size_t r = tok.find_last_not_of(' ');
+        if (l != std::string::npos)
+            out.push_back(tok.substr(l, r - l + 1));
+    }
+    return out;
 }
 
 static std::string FormatDuration(uint32 ms)
@@ -439,14 +458,19 @@ void DynamicQuestMgr::ForceTriggger(Player* player, uint32 templateId)
     // Archetype spawn path
     if (IsArchetypeId(selectedTemplate))
     {
+        uint32 archetypeId = DecodeArchetypeId(selectedTemplate);
         CourierSelection sel;
         sel.entry = sWorldCatalogue->GetCourierEntryForTheme("social");
         if (sel.entry == 0)
         {
             LOG_WARN("module.dynamicquests", "ForceTriggger: No social courier entry for archetype {}.",
-                DecodeArchetypeId(selectedTemplate));
+                archetypeId);
             return;
         }
+        if (const ArchetypeDef* def = sArchetypeMgr->Get(archetypeId))
+            if (!def->appearance.empty())
+                sel.displayId = sWorldCatalogue->GetWorldCourierDisplayId(
+                    ps.ctx.zoneId, SplitTags(def->appearance), {}, 1);
         SpawnCourier(player, ps, selectedTemplate, sel);
         return;
     }
@@ -621,6 +645,16 @@ void DynamicQuestMgr::OnDestinationInteracted(Player* player, Creature* destNpc)
 
     if (IMechanicModule* m = GetMechanic(ps.activeTemplateId))
         m->OnDelivery(player, destNpc, ps.activeInst);
+}
+
+void DynamicQuestMgr::OnPropActivated(Player* player, GameObject* go)
+{
+    PlayerDQState& ps = GetOrCreate(player->GetGUID());
+    if (ps.state != DQ_STATE_ON_QUEST)
+        return;
+
+    if (IMechanicModule* m = GetMechanic(ps.activeTemplateId))
+        m->OnActivate(player, go, ps.activeInst);
 }
 
 // ---------------------------------------------------------------------------
@@ -831,18 +865,23 @@ void DynamicQuestMgr::TryTrigger(Player* player, PlayerDQState& ps)
         if (roll < 0) { selectedId = p.first; break; }
     }
 
-    // Archetype: synthesise CourierSelection — displayId override applied later in OnStart.
+    // Archetype: synthesise CourierSelection — appearance tags drive display ID selection.
     if (IsArchetypeId(selectedId))
     {
+        uint32 archetypeId = DecodeArchetypeId(selectedId);
         CourierSelection sel;
         sel.entry = sWorldCatalogue->GetCourierEntryForTheme("social");
         if (sel.entry == 0)
         {
             LOG_WARN("module.dynamicquests",
                 "TryTrigger: No social courier entry for archetype {}. Skipping.",
-                DecodeArchetypeId(selectedId));
+                archetypeId);
             return;
         }
+        if (const ArchetypeDef* def = sArchetypeMgr->Get(archetypeId))
+            if (!def->appearance.empty())
+                sel.displayId = sWorldCatalogue->GetWorldCourierDisplayId(
+                    ps.ctx.zoneId, SplitTags(def->appearance), {}, 1);
         SpawnCourier(player, ps, selectedId, sel);
         return;
     }
@@ -925,6 +964,17 @@ bool DynamicQuestMgr::SpawnCourier(Player* player, PlayerDQState& ps,
             player->GetOrientation() + static_cast<float>(M_PI));
         courier = DQSpawnSystem::SpawnStationary(player, spawnPos, desc);
     }
+    else if (IsArchetypeId(templateId))
+    {
+        // Archetype courier: spawn style is read from the current beat's spawn_style column.
+        uint32 archetypeId = DecodeArchetypeId(templateId);
+        auto   it          = ps.archetypeProgress.find(archetypeId);
+        uint8  beatNum     = (it != ps.archetypeProgress.end() && it->second != 0xFF)
+                                ? it->second : 1;
+        const ArchetypeBeat* beat  = sArchetypeMgr->GetBeat(archetypeId, beatNum);
+        const std::string&   style = beat ? beat->spawnStyle : "approaches";
+        courier = SpawnWithStyle(player, desc, style);
+    }
     else
     {
         courier = DQSpawnSystem::SpawnCourier(player, desc);
@@ -968,6 +1018,69 @@ bool DynamicQuestMgr::SpawnCourier(Player* player, PlayerDQState& ps,
             templateId, sel.entry, sel.displayId));
 
     return true;
+}
+
+TempSummon* DynamicQuestMgr::SpawnWithStyle(Player* player, const DQSpawnDesc& desc,
+    const std::string& style)
+{
+    // "approaches" — 22y ahead → MoveFollow (default)
+    if (style.empty() || style == "approaches")
+        return DQSpawnSystem::SpawnCourier(player, desc, 22.0f);
+
+    // "distant" — 55y down the road; same MoveFollow arrival
+    if (style == "distant")
+        return DQSpawnSystem::SpawnCourier(player, desc, 55.0f);
+
+    // "run_up" — sprints from 40y at 1.8× run speed
+    if (style == "run_up")
+    {
+        TempSummon* c = DQSpawnSystem::SpawnCourier(player, desc, 40.0f);
+        if (c)
+            c->SetSpeed(MOVE_RUN, c->GetSpeed(MOVE_RUN) * 1.8f);
+        return c;
+    }
+
+    // "roadside" — 25y ahead + 12y to the player's right; DQ_CourierAI starts MoveFollow
+    if (style == "roadside")
+    {
+        float fwd = player->GetOrientation();
+        float lat = fwd - float(M_PI) * 0.5f; // 90° clockwise = right side
+        float px  = player->GetPositionX()
+                    + 25.0f * std::cos(fwd)
+                    + 12.0f * std::cos(lat);
+        float py  = player->GetPositionY()
+                    + 25.0f * std::sin(fwd)
+                    + 12.0f * std::sin(lat);
+        Position pos(px, py, player->GetPositionZ(), fwd + float(M_PI));
+        return DQSpawnSystem::SpawnStationary(player, pos, desc);
+    }
+
+    // "waiting" / "collapses" — spawn within arrive-distance (2y) so courier transitions
+    // on the first AI tick without visibly walking; emote_on_arrive fires via OnCourierArrived
+    if (style == "waiting" || style == "collapses")
+        return DQSpawnSystem::SpawnCourier(player, desc, 2.0f);
+
+    // "from_portal" — summoning portal GO (entry 36727) appears at 6y; courier emerges from it
+    if (style == "from_portal")
+    {
+        constexpr uint32 PORTAL_GO_ENTRY = 36727;
+        constexpr uint32 PORTAL_DURATION = 8000;
+        float ang = player->GetOrientation();
+        float px  = player->GetPositionX() + 6.0f * std::cos(ang);
+        float py  = player->GetPositionY() + 6.0f * std::sin(ang);
+        Position portalPos(px, py, player->GetPositionZ(), 0.0f);
+        DQSpawnSystem::SpawnGameObject(player, PORTAL_GO_ENTRY, portalPos,
+            desc.phaseBit, PORTAL_DURATION);
+        return DQSpawnSystem::SpawnCourier(player, desc, 6.0f);
+    }
+
+    // "from_shadow" — short approach (8y); feels like stepping from concealment
+    if (style == "from_shadow")
+        return DQSpawnSystem::SpawnCourier(player, desc, 8.0f);
+
+    LOG_WARN("module.dynamicquests",
+        "SpawnWithStyle: unknown style '{}' — falling back to 'approaches'.", style);
+    return DQSpawnSystem::SpawnCourier(player, desc, 22.0f);
 }
 
 void DynamicQuestMgr::TransitionState(Player* player, PlayerDQState& ps, DQPlayerState newState)

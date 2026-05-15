@@ -14,6 +14,7 @@
 
 class Player;
 class Creature;
+class GameObject;
 
 struct InteractionInstance
 {
@@ -70,6 +71,9 @@ public:
 
     // Called when the player loots an item while ON_QUEST.
     virtual void OnLoot(Player* /*player*/, uint32 /*itemId*/, InteractionInstance& /*inst*/) {}
+
+    // Called when the player interacts with a prop GO spawned for this beat.
+    virtual void OnActivate(Player* /*player*/, GameObject* /*go*/, InteractionInstance& /*inst*/) {}
 
     // Called when the player interacts with the destination NPC (for fetch/deliver outcomes).
     virtual void OnDelivery(Player* /*player*/, Creature* /*destNpc*/, InteractionInstance& /*inst*/) {}

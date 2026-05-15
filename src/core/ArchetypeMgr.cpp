@@ -21,7 +21,7 @@ void ArchetypeMgr::LoadFromDB()
     _idIndex.clear();
 
     QueryResult result = WorldDatabase.Query(
-        "SELECT id, name, pattern, total_beats, zone_id, level_min, level_max, enabled "
+        "SELECT id, name, pattern, total_beats, zone_id, level_min, level_max, enabled, appearance "
         "FROM dq_archetype ORDER BY id");
 
     if (!result)
@@ -43,6 +43,7 @@ void ArchetypeMgr::LoadFromDB()
         def.levelMin   = f[5].Get<uint8>();
         def.levelMax   = f[6].Get<uint8>();
         def.enabled    = f[7].Get<uint8>() != 0;
+        def.appearance = f[8].Get<std::string>();
 
         size_t idx = _archetypes.size();
         _idIndex[def.id] = idx;
@@ -52,7 +53,8 @@ void ArchetypeMgr::LoadFromDB()
     QueryResult beats = WorldDatabase.Query(
         "SELECT archetype_id, beat_number, display_id, zone_id, mechanic, "
         "transition_type, transition_value, text_greeting, text_chase, "
-        "emote_on_arrive, emote_on_complete, reward_pool "
+        "emote_on_arrive, emote_on_complete, reward_pool, "
+        "spawn_style, prop_entry, prop_count, prop_radius "
         "FROM dq_archetype_beat ORDER BY archetype_id, beat_number");
 
     uint32 beatCount = 0;
@@ -74,6 +76,10 @@ void ArchetypeMgr::LoadFromDB()
             beat.emoteOnArrive   = f[9].Get<int16>();
             beat.emoteOnComplete = f[10].Get<int16>();
             beat.rewardPool      = f[11].Get<std::string>();
+            beat.spawnStyle      = f[12].Get<std::string>();
+            beat.propEntry       = f[13].Get<uint32>();
+            beat.propCount       = f[14].Get<uint8>();
+            beat.propRadius      = f[15].Get<float>();
 
             auto it = _idIndex.find(beat.archetypeId);
             if (it != _idIndex.end())

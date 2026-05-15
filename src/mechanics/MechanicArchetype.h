@@ -15,6 +15,7 @@
 
 class Player;
 class Creature;
+class GameObject;
 
 class MechanicArchetype : public IMechanicModule
 {
@@ -39,6 +40,9 @@ public:
 
     // Drives kill-objective beats.
     void OnKill(Player* player, Creature* victim, InteractionInstance& inst) override;
+
+    // Drives activate/gather beats: increments count, completes beat when target reached.
+    void OnActivate(Player* player, GameObject* go, InteractionInstance& inst) override;
 
     // GM command: force-advance to next beat regardless of progress.
     void ForceAdvance(Player* player, InteractionInstance& inst) override;

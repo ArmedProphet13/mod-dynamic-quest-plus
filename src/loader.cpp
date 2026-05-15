@@ -11,6 +11,8 @@ void AddSC_DQ_CommandScript();
 void AddSC_dq_chest_items();
 void AddSC_DQ_SuccubusAI();
 void AddSC_DQ_HungryChildAI();
+void AddSC_DQ_CourierAI();
+void AddSC_DQ_PropScript();
 
 void Addmod_dynamic_quest_plusScripts()
 {
@@ -20,4 +22,6 @@ void Addmod_dynamic_quest_plusScripts()
     AddSC_dq_chest_items();
     AddSC_DQ_SuccubusAI();
     AddSC_DQ_HungryChildAI();
+    AddSC_DQ_CourierAI();
+    AddSC_DQ_PropScript();
 }

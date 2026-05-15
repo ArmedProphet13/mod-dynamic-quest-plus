@@ -13,15 +13,20 @@
 
 #include "MechanicArchetype.h"
 #include "ArchetypeMgr.h"
+#include "DQSpawnSystem.h"
 #include "DynamicQuestMgr.h"
 #include "Creature.h"
 #include "DatabaseEnv.h"
 #include "Field.h"
 #include "GameTime.h"
+#include "GameObject.h"
 #include "Log.h"
 #include "Map.h"
 #include "Player.h"
 #include "SharedDefines.h"
+#include <algorithm>
+#include <cmath>
+#include <random>
 
 // ---------------------------------------------------------------------------
 // DB helpers — character_dq_sequences
@@ -179,6 +184,26 @@ void MechanicArchetype::OnStart(Player* player, Creature* courier, InteractionIn
     if (beat->transitionType == DQ_TRANS_TIMER)
         inst.phaseTimer = beat->transitionValue * 1000u;
 
+    // Scatter prop GOs for activate/gather beats
+    if (beat->propEntry != 0 && beat->propCount > 0)
+    {
+        static std::mt19937 rng{ std::random_device{}() };
+        std::uniform_real_distribution<float> angleDist(0.0f, 2.0f * float(M_PI));
+        std::uniform_real_distribution<float> radDist(1.5f, beat->propRadius);
+
+        for (uint8 i = 0; i < beat->propCount; ++i)
+        {
+            float a  = angleDist(rng);
+            float r  = radDist(rng);
+            float px = player->GetPositionX() + r * std::cos(a);
+            float py = player->GetPositionY() + r * std::sin(a);
+            Position pos(px, py, player->GetPositionZ(), 0.0f);
+            if (GameObject* go = DQSpawnSystem::SpawnGameObject(
+                    player, beat->propEntry, pos, inst.phaseBit, 600000))
+                inst.auxGuidList.push_back(go->GetGUID());
+        }
+    }
+
     LOG_DEBUG("module.dynamicquests",
         "ArchetypeEngine: {} archetype={} beat={} mechanic={} transition={} count={}/{}",
         player->GetName(), archetypeId, currentBeat,
@@ -249,6 +274,26 @@ void MechanicArchetype::OnCleanup(Player* player, InteractionInstance& inst)
     if (!inst.courierGuid.IsEmpty())
         if (Creature* courier = player->GetMap()->GetCreature(inst.courierGuid))
             courier->DespawnOrUnsummon(Milliseconds(500));
+
+    for (ObjectGuid guid : inst.auxGuidList)
+        if (GameObject* go = player->GetMap()->GetGameObject(guid))
+            go->Delete();
+    inst.auxGuidList.clear();
+}
+
+void MechanicArchetype::OnActivate(Player* player, GameObject* go, InteractionInstance& inst)
+{
+    // Only accept clicks on GOs that belong to this interaction
+    auto it = std::find(inst.auxGuidList.begin(), inst.auxGuidList.end(), go->GetGUID());
+    if (it == inst.auxGuidList.end())
+        return;
+
+    inst.auxGuidList.erase(it);
+    go->Delete();
+
+    inst.objectiveCount++;
+    if (inst.objectiveCount >= inst.objectiveTarget)
+        CompleteBeat(player, inst);
 }
 
 void MechanicArchetype::OnUpdate(Player* player, uint32 diff, InteractionInstance& inst)

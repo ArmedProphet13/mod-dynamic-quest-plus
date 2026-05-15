@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS `dq_archetype` (
   `level_min`   TINYINT UNSIGNED NOT NULL DEFAULT 1,
   `level_max`   TINYINT UNSIGNED NOT NULL DEFAULT 80,
   `enabled`     TINYINT          NOT NULL DEFAULT 1,
+  `appearance`  VARCHAR(128)     NOT NULL DEFAULT '', -- tag expression for NPC model: "humanoid,male,peasant"
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -38,7 +39,7 @@ CREATE TABLE IF NOT EXISTS `dq_archetype_beat` (
   `id`               INT UNSIGNED     NOT NULL AUTO_INCREMENT,
   `archetype_id`     INT UNSIGNED     NOT NULL,
   `beat_number`      TINYINT UNSIGNED NOT NULL,          -- 1-based; counter pattern: 1=repeating beat, 2=final beat
-  `display_id`       INT UNSIGNED     NOT NULL DEFAULT 0, -- 0 = use archetype-level default from WorldCatalogue
+  `display_id`       INT UNSIGNED     NOT NULL DEFAULT 0, -- 0 = use archetype appearance tags; non-zero = explicit override
   `zone_id`          INT UNSIGNED     NOT NULL DEFAULT 0, -- 0 = inherit from dq_archetype.zone_id
   `mechanic`         ENUM('witness','courier','goto','kill','activate') NOT NULL DEFAULT 'witness',
   `transition_type`  ENUM('quest_complete','encounter_count','choice','timer') NOT NULL DEFAULT 'quest_complete',
@@ -48,6 +49,12 @@ CREATE TABLE IF NOT EXISTS `dq_archetype_beat` (
   `emote_on_arrive`  SMALLINT         NOT NULL DEFAULT 0,  -- emote played immediately on spawn (0 = none)
   `emote_on_complete` SMALLINT        NOT NULL DEFAULT 0,  -- emote played when beat completes (0 = none)
   `reward_pool`      VARCHAR(64)      NOT NULL DEFAULT '', -- dq_reward_pool.pool_name; empty = no reward this beat
+  -- System 1: Spawn Style
+  `spawn_style`      VARCHAR(32)      NOT NULL DEFAULT 'approaches', -- approaches|distant|roadside|waiting|run_up|from_portal|from_shadow|collapses
+  -- System 3: Prop Spawning (activate mechanic)
+  `prop_entry`       INT UNSIGNED     NOT NULL DEFAULT 0,  -- GO entry to scatter (0 = no props)
+  `prop_count`       TINYINT UNSIGNED NOT NULL DEFAULT 1,  -- how many GOs to scatter
+  `prop_radius`      FLOAT            NOT NULL DEFAULT 12.0, -- scatter radius around player (yards)
   PRIMARY KEY (`id`),
   KEY `idx_archetype_beat` (`archetype_id`, `beat_number`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

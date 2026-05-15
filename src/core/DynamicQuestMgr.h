@@ -17,6 +17,7 @@
 #include "EligibilityEngine.h"
 #include "IMechanicModule.h"
 #include "NPCMatchingEngine.h"
+#include "DQSpawnSystem.h"
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -143,6 +144,8 @@ struct PlayerDQState
 
 class Player;
 class Creature;
+class GameObject;
+class TempSummon;
 
 class DynamicQuestMgr
 {
@@ -229,6 +232,9 @@ public:
     // Called by DQ_DestinationAI / DQ_CourierAI on delivery attempt.
     void OnDestinationInteracted(Player* player, Creature* destNpc);
 
+    // Called by DQ_PropScript when a player activates a prop GO.
+    void OnPropActivated(Player* player, GameObject* go);
+
     // Config values (loaded once, refreshed by LoadConfig)
     uint32 cfg_tier1MinMs       = 1800000;
     uint32 cfg_tier1MaxMs       = 2700000;
@@ -253,6 +259,9 @@ private:
     void TickOnQuest(Player* player, PlayerDQState& ps, uint32 diff);
     void TryTrigger(Player* player, PlayerDQState& ps);
     bool SpawnCourier(Player* player, PlayerDQState& ps, uint32 templateId, const CourierSelection& sel);
+    // Dispatches to the appropriate DQSpawnSystem call based on beat's spawn_style.
+    TempSummon* SpawnWithStyle(Player* player, const DQSpawnDesc& desc,
+        const std::string& style);
     void TransitionState(Player* player, PlayerDQState& ps, DQPlayerState newState);
     uint32 RollCooldown(uint8 tier) const;
     void AddToHistory(PlayerDQState& ps, uint32 templateId);

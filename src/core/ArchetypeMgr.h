@@ -55,7 +55,7 @@ struct ArchetypeBeat
 {
     uint32           archetypeId     = 0;
     uint8            beatNumber      = 1;
-    uint32           displayId       = 0;   // 0 = keep courier default model
+    uint32           displayId       = 0;   // 0 = use archetype appearance tags; non-zero = explicit override
     uint32           zoneId          = 0;   // 0 = inherit from ArchetypeDef
     DQBeatMechanic   mechanic        = DQ_BEAT_WITNESS;
     DQBeatTransition transitionType  = DQ_TRANS_QUEST_COMPLETE;
@@ -65,6 +65,12 @@ struct ArchetypeBeat
     int16            emoteOnArrive   = 0;   // emote played immediately on spawn (0 = none)
     int16            emoteOnComplete = 0;   // emote played when beat completes (0 = none)
     std::string      rewardPool;            // dq_reward_pool.pool_name; empty = no reward
+    // System 1: Spawn Style
+    std::string      spawnStyle      = "approaches"; // how the courier enters the scene
+    // System 3: Prop Spawning
+    uint32           propEntry       = 0;   // GO entry to scatter (0 = no props)
+    uint8            propCount       = 1;   // how many GOs to scatter
+    float            propRadius      = 12.f; // scatter radius (yards)
 };
 
 // ---------------------------------------------------------------------------
@@ -81,6 +87,8 @@ struct ArchetypeDef
     uint8       levelMin   = 1;
     uint8       levelMax   = 80;
     bool        enabled    = true;
+    // System 2: Appearance — tag expression for NPC model selection ("humanoid,male,peasant")
+    std::string appearance;
 
     std::vector<ArchetypeBeat> beats;
 };

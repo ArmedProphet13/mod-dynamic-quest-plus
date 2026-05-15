@@ -42,7 +42,6 @@ static constexpr uint32 ACTION_FIGHT         = 1;
 
 static constexpr uint32 GO_SUMMONING_PORTAL    = 36727; // Summoning Portal GO
 static constexpr uint32 SPELL_DRAIN_SOUL_VIS   = 60857; // Drain Soul Visual — beam on player, no damage/control
-static constexpr uint32 SPELL_DRAIN_SOUL       = 1120;  // used in combat only (rank 1)
 static constexpr uint32 SPELL_SOUL_DEBT        = 15007; // Resurrection Sickness, 4h
 static constexpr int32  SPELL_SOUL_DEBT_MS     = 4 * 3600 * 1000;
 

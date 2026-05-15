@@ -83,10 +83,12 @@ VALUES
 -- Item 33052 = Freshly Baked Bread (sold by innkeepers and food vendors).
 -- Emotes: CHEER(4) on give, SIT(1) on fetch-accept, CRY(22) on refuse.
 
--- Gossip window header (DELETE + INSERT so text is always up to date)
-DELETE FROM `npc_text` WHERE `ID` = 9000002;
+-- Gossip window headers (DELETE + INSERT so text is always up to date)
+DELETE FROM `npc_text` WHERE `ID` IN (9000002, 9000003);
 INSERT INTO `npc_text` (`ID`, `text0_0`, `em0_0`) VALUES
-(9000002, 'A small child pulls at your sleeve, eyes wide with hunger. "Please... do you have any bread? The innkeeper sells it, but I have nothing left."', 0);
+(9000002, 'A small child pulls at your sleeve, eyes wide with hunger. "Please... do you have any bread? The innkeeper sells it, but I have nothing left."', 0),
+-- 9000003: generic archetype courier — body is intentionally blank; NPC already spoke via Say()
+(9000003, '', 0);
 
 DELETE FROM `dq_interaction_template` WHERE `id` = 2;
 INSERT INTO `dq_interaction_template`
@@ -332,44 +334,77 @@ INSERT INTO `dq_text_variant` (`template_id`, `variant_type`, `text`, `weight`) 
 -- DynamicQuests+ | The Herb Seller — HiddenPurpose archetype (4-beat Sequential)
 --
 -- Story arc:
---   Beat 1 (courier)  — NPC asks player to gather herbs; his back troubles him.
+--   Beat 1 (activate) — NPC asks player to gather 3 herb bundles nearby.
 --   Beat 2 (witness)  — Player sees him selling the same herbs at the market.
---   Beat 3 (courier)  — NPC gives player coin, asks them to buy a carved toy horse.
+--   Beat 3 (courier)  — NPC gives coin, asks to buy a carved toy horse.
 --   Beat 4 (witness)  — Player sees him give the toy to a laughing child.
 --
 -- Zone 37 = Hillsbrad Foothills. level_min=1, level_max=80.
--- display_id=0 on all beats: courier uses its default social NPC model.
+-- appearance 'humanoid,male' — engine picks a zone-appropriate elderly male model.
 
 DELETE FROM `dq_archetype`      WHERE `id` = 2;
 DELETE FROM `dq_archetype_beat` WHERE `archetype_id` = 2;
 
 INSERT INTO `dq_archetype`
-    (`id`, `name`,           `pattern`,    `total_beats`, `zone_id`, `level_min`, `level_max`, `enabled`)
+    (`id`, `name`,           `pattern`,    `total_beats`, `zone_id`, `level_min`, `level_max`, `enabled`, `appearance`)
 VALUES
-    (2,   'The Herb Seller', 'sequential', 4,              37,        1,           80,          1);
+    (2,   'The Herb Seller', 'sequential', 4,              37,        1,           80,          1,         'humanoid,male');
 
 INSERT INTO `dq_archetype_beat`
-    (`archetype_id`, `beat_number`, `display_id`, `zone_id`, `mechanic`, `transition_type`,  `transition_value`,
-     `text_greeting`,
-     `text_chase`,
-     `emote_on_arrive`, `emote_on_complete`, `reward_pool`)
+    (`archetype_id`, `beat_number`, `display_id`, `zone_id`,
+     `mechanic`,  `transition_type`,  `transition_value`,
+     `text_greeting`, `text_chase`,
+     `emote_on_arrive`, `emote_on_complete`, `reward_pool`,
+     `spawn_style`, `prop_entry`, `prop_count`, `prop_radius`)
 VALUES
-(2, 1, 0, 37, 'courier', 'quest_complete', 1,
+-- Beat 1: herb gather — 3 Herb Bundle GOs scatter nearby; player clicks each one
+(2, 1, 0, 37,
+ 'activate', 'quest_complete', 3,
  'Traveler! I hate to ask a stranger, but my back troubles me something fierce today. There are wild herbs growing just past the old fence — would you pick a handful? I can pay.',
  'Please — it would only take a moment!',
- 25, 4, 'herb_seller_small'),
+ 25, 4, 'herb_seller_small',
+ 'approaches', 900100, 3, 12.0),
 
-(2, 2, 0, 37, 'witness', 'encounter_count', 1,
+-- Beat 2: witness — old man selling herbs at market stall
+(2, 2, 0, 37,
+ 'witness', 'encounter_count', 1,
  'You catch sight of him at the market stall, calling out to buyers. The herbs you gathered are already bundled and priced.',
  '',
- 5, 0, ''),
+ 5, 0, '',
+ 'waiting', 0, 0, 0.0),
 
-(2, 3, 0, 37, 'courier', 'quest_complete', 1,
+-- Beat 3: courier task — NPC hands player a coin, asks for carved horse
+(2, 3, 0, 37,
+ 'courier', 'encounter_count', 1,
  'Ah — you again. Good timing. Here, take this coin. There is a toy seller near the east gate. Buy me a small carved horse, would you? Child-sized.',
  'It is important. Please.',
- 1, 4, ''),
+ 1, 4, '',
+ 'approaches', 0, 0, 0.0),
 
-(2, 4, 0, 37, 'witness', 'encounter_count', 1,
+-- Beat 4: witness — old man gives the horse to a laughing child
+(2, 4, 0, 37,
+ 'witness', 'encounter_count', 1,
  'The old man is crouched in the road, holding out the wooden horse. A small boy runs to him, laughing.',
  '',
- 4, 0, 'herb_seller_final');
+ 4, 0, 'herb_seller_final',
+ 'waiting', 0, 0, 0.0);
+
+-- ===== base/dq_gameobject_template.sql =====
+-- DQ+ interactable prop GOs (entries 900100-900102, type 22 GOOBER, ScriptName DQ_PropGO).
+-- Display IDs: Goldthorn herb (698), Excavation Supply Crate (31), Noggle's Satchel (323).
+
+DELETE FROM `gameobject_template` WHERE `entry` IN (900100, 900101, 900102);
+
+INSERT INTO `gameobject_template`
+    (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`,
+     `Data0`, `Data1`, `Data2`, `Data3`, `Data4`, `Data5`, `Data6`, `Data7`,
+     `Data8`, `Data9`, `Data10`, `Data11`, `Data12`, `Data13`, `Data14`, `Data15`,
+     `Data16`, `Data17`, `Data18`, `Data19`, `Data20`, `Data21`, `Data22`, `Data23`,
+     `AIName`, `ScriptName`, `VerifiedBuild`)
+VALUES
+(900100, 22, 698,  'DQ Herb Bundle',   '', '', '', 1.0,
+ 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, '', 'DQ_PropGO', 0),
+(900101, 22, 31,   'DQ Supply Crate',  '', '', '', 1.0,
+ 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, '', 'DQ_PropGO', 0),
+(900102, 22, 323,  'DQ Fallen Pack',   '', '', '', 1.0,
+ 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, '', 'DQ_PropGO', 0);
