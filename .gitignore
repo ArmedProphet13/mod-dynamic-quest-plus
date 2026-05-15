@@ -41,6 +41,25 @@ cmake_install.cmake
 !CMakeLists.txt
 
 #
+# Internal / private files — never commit these
+#
+DEV_GUIDE.md
+*_INTERNAL*
+*_internal*
+*_private*
+*_Private*
+*.internal.*
+*.private.*
+NOTES.md
+notes.md
+PASSWORDS*
+passwords*
+SECRETS*
+secrets*
+*.local.conf
+*.local.sql
+
+#
 # Eclipse
 #
 *.pydevproject
