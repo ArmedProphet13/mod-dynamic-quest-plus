@@ -1,14 +1,60 @@
 -- DynamicQuests+ | Interaction: "Hungry Child"
--- Theme: social | Mechanic: gossip_exchange | Tier: 1 | Level: 1-80
+-- Theme: hungry_child | Mechanic: hungry_child | Tier: 1 | Level: 1-80
 --
--- A child NPC asks the player for food. Available in capital cities.
--- Item 33052 = Freshly Baked Bread (sold by innkeepers and food vendors).
--- Emotes: CHEER(4) on give, SIT(1) on fetch-accept, CRY(22) on refuse.
+-- A small child appears, walks toward the player crying, and asks for any food.
+-- The encounter is driven entirely by DQ_HungryChildAI (entry 900040).
+--   - Any CONSUMABLE/FOOD item satisfies the requirement.
+--   - On accept: item consumed, reward delivered, eat+laugh+run-off animation.
+--   - On deny:   short cry, child despawns.
+--
+-- creature_template 900040: the DQ_HungryChildAI base creature.
+-- Model 18986 is a fallback human child display; the WorldCatalogue will
+-- override this with a zone-appropriate child model at spawn time.
 
--- Gossip window header (DELETE + INSERT so text is always up to date)
+-- ── Creature template ──────────────────────────────────────────────────────────
+
+DELETE FROM `creature_template` WHERE `entry` = 900040;
+INSERT INTO `creature_template`
+    (`entry`, `name`, `subname`, `IconName`, `gossip_menu_id`,
+     `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`,
+     `speed_walk`, `speed_run`,
+     `rank`, `type`, `type_flags`,
+     `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`,
+     `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`,
+     `AIName`, `MovementType`, `HoverHeight`,
+     `HealthModifier`, `ManaModifier`, `ArmorModifier`, `DamageModifier`,
+     `ExperienceModifier`, `RegenHealth`,
+     `flags_extra`, `ScriptName`, `VerifiedBuild`)
+VALUES
+    (900040, 'Hungry Child', 'DynamicQuests+', '', 0,
+     1, 80, 0, 35, 1,            -- faction 35 = Friendly; npcflag 1 = Gossip
+     1.0, 1.14286,               -- walk/run speed
+     0, 7, 0,                    -- rank 0, type 7 = Humanoid
+     2000, 2000, 1.0, 1.0,
+     1, 256, 0, 0,               -- unit_flags 256 = NON_ATTACKABLE
+     '', 0, 1.0,                 -- AIName empty (C++ script via ScriptName), MovementType 0
+     1.0, 1.0, 1.0, 1.0,
+     1.0, 1,
+     0, 'DQ_HungryChildAI', 0);
+
+DELETE FROM `creature_template_model` WHERE `CreatureID` = 900040;
+INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`)
+VALUES (900040, 0, 18986, 0.8, 1.0);  -- DisplayScale 0.8: slightly smaller than adults
+
+-- ── Courier theme mapping ──────────────────────────────────────────────────────
+-- Maps theme 'hungry_child' → entry 900040 so NPCMatchingEngine resolves
+-- the correct AI carrier entry for this mechanic type.
+
+DELETE FROM `dq_courier_template` WHERE `theme_tag` = 'hungry_child';
+INSERT INTO `dq_courier_template` (`theme_tag`, `entry`) VALUES ('hungry_child', 900040);
+
+-- ── Gossip text ────────────────────────────────────────────────────────────────
+
 DELETE FROM `npc_text` WHERE `ID` = 9000002;
 INSERT INTO `npc_text` (`ID`, `text0_0`, `em0_0`) VALUES
-(9000002, 'A small child pulls at your sleeve, eyes wide with hunger. "Please... do you have any bread? The innkeeper sells it, but I have nothing left."', 0);
+(9000002, 'A small child stands in your path, eyes red from crying.\n"Please... do you have any food? I haven''t eaten since yesterday."', 0);
+
+-- ── Interaction template ───────────────────────────────────────────────────────
 
 DELETE FROM `dq_interaction_template` WHERE `id` = 2;
 INSERT INTO `dq_interaction_template`
@@ -18,50 +64,44 @@ INSERT INTO `dq_interaction_template`
      `combat_hp_pct`, `combat_dmg_pct`, `gossip_npc_text_id`,
      `combat_hp_ratio`, `combat_dmg_ratio`, `zone_faction`)
 VALUES
-    (2, 'Hungry Child', 'social',
+    (2, 'Hungry Child', 'hungry_child',
      'child,humanoid,civilian',
-     'demon,undead,hostile,horde',
+     'demon,undead,hostile,horde,animal,critter,beast,elemental',
      'capital', 1, 80, 0,
-     'traveling,idle,exploring', 1, 'gossip_exchange', 12,
+     'traveling,idle,exploring', 1, 'hungry_child', 12,
      0, 0, 9000002,
      0.0, 0.0, 'alliance');
 
+-- Choices are kept for template completeness but are not used by MechanicHungryChild.
+-- The AI (DQ_HungryChildAI) builds and handles its own gossip menu.
 DELETE FROM `dq_interaction_choice` WHERE `template_id` = 2;
 INSERT INTO `dq_interaction_choice`
     (`template_id`, `display_order`, `choice_text`, `prereq_item_id`,
      `outcome_type`, `outcome_data`, `emote_on_select`)
 VALUES
-    -- Give bread immediately — only appears if player already has one
-    (2, 0, 'Here you go, little one. Take this.', 33052,
-     'reward', 'cost:item:33052,pool:charity_low', 4),
+    (2, 0, 'Here you go, little one.', 0, 'reward', 'pool:hungry_child_reward', 7),
+    (2, 1, 'Scram!',                   0, 'deny',   '',                         18);
 
-    -- Fetch: go find bread and return to the child
-    (2, 1, 'I''ll find you something. Wait here.', 0,
-     'fetch', 'item:33052,pool:charity_low', 1),
+-- ── Reward pool ────────────────────────────────────────────────────────────────
+-- Always awards the green armor cache (900100). No gold-only rows — the child's
+-- gratitude is tangible. At 60+ the cache upgrades to blue (900101).
 
-    -- Refuse: child cries
-    (2, 2, 'I''m sorry, I have nothing to spare.', 0,
-     'deny', '', 22);
-
--- Reward pool for charity — small but meaningful at every level bracket
-DELETE FROM `dq_reward_pool` WHERE `pool_name` = 'charity_low';
+DELETE FROM `dq_reward_pool` WHERE `pool_name` = 'hungry_child_reward';
 INSERT INTO `dq_reward_pool`
     (`pool_name`, `level_min`, `level_max`, `item_entry`,
      `gold_min_copper`, `gold_max_copper`, `xp_amount`, `weight`)
 VALUES
-    ('charity_low',  1, 29, 0,  5000,  15000,  500, 10),
-    ('charity_low', 30, 59, 0, 10000,  30000, 1500, 10),
-    ('charity_low', 60, 80, 0, 20000,  50000,    0, 10);
+    ('hungry_child_reward',  1, 29, 900100,  5000,  15000,  600, 10),
+    ('hungry_child_reward', 30, 59, 900100, 10000,  30000, 1800, 10),
+    ('hungry_child_reward', 60, 80, 900101, 20000,  50000,    0, 10);
 
--- Text variants: greeting (child runs up) and chase (child follows player)
+-- ── Text variants ──────────────────────────────────────────────────────────────
+-- Greeting variants only — the child doesn't chase after the player.
+
 DELETE FROM `dq_text_variant` WHERE `template_id` = 2;
 INSERT INTO `dq_text_variant` (`template_id`, `variant_type`, `text`, `weight`) VALUES
-    (2, 'greeting', '"Mister, missus, please... do you have any food?"',                    10),
-    (2, 'greeting', 'A small hand grabs your cloak. The child looks up, hollow-cheeked.',   10),
-    (2, 'greeting', '"I haven''t eaten since yesterday. Please..."',                         9),
-    (2, 'greeting', 'The child stands in your path, too tired to move out of the way.',     8),
-    (2, 'greeting', '"You look kind. Are you kind? Can you help me?"',                       7),
-    (2, 'chase',    '"Please don''t go. I''m so hungry."',                                   10),
-    (2, 'chase',    'The child trots after you, arms outstretched.',                         10),
-    (2, 'chase',    '"I won''t bother you long. I promise."',                                8),
-    (2, 'chase',    '"Just a piece of bread. Just one."',                                    7);
+    (2, 'greeting', '"Please... do you have any food? Anything at all?"',          10),
+    (2, 'greeting', 'A small hand reaches up and tugs at your sleeve.',            10),
+    (2, 'greeting', '"You look kind. Are you kind? I''m so hungry..."',             9),
+    (2, 'greeting', '"I haven''t eaten since yesterday. Please."',                  8),
+    (2, 'greeting', 'The child watches you approach, too tired to speak first.',   7);
