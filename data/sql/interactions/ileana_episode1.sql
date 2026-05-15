@@ -8,19 +8,13 @@
 DELETE FROM `npc_text` WHERE `ID` IN (9001010, 9001011, 9001012);
 
 -- Page 1: The portal tears open. She introduces herself.
-INSERT INTO `npc_text` (`ID`, `text0_0`) VALUES
-(9001010,
-'$B$BThe portal tears open without warning. No ritual. No invitation. Violet fire bleeds through the gap - like something on the other side has been pressing against it for a long time, waiting for exactly this moment.$B$B"Oh, don''t reach for that. We both know how that ends, and I''d rather not begin our relationship with something so unpleasant."$B$B');
+INSERT INTO `npc_text` (`ID`, `text0_0`) VALUES (9001010, '$B$BThe portal tears open without warning. No ritual. No invitation. Violet fire bleeds through the gap - like something on the other side has been pressing against it for a long time, waiting for exactly this moment.$B$B"Oh, don''t reach for that. We both know how that ends, and I''d rather not begin our relationship with something so unpleasant."$B$B');
 
 -- Page 2: The pitch.
-INSERT INTO `npc_text` (`ID`, `text0_0`) VALUES
-(9001011,
-'$B$B"You''ve been working hard. I''ve watched. All that struggle - all that effort - and still not quite enough, is it? There''s always something just out of reach."$B$BShe tilts her head.$B$B"I can change that. Right now. No temples, no gods, no years of crawling toward something that keeps moving. Just power - real power - and it''s yours."$B$B');
+INSERT INTO `npc_text` (`ID`, `text0_0`) VALUES (9001011, '$B$B"You''ve been working hard. I''ve watched. All that struggle - all that effort - and still not quite enough, is it? There''s always something just out of reach."$B$BShe tilts her head.$B$B"I can change that. Right now. No temples, no gods, no years of crawling toward something that keeps moving. Just power - real power - and it''s yours."$B$B');
 
 -- Page 3 (final): The question.
-INSERT INTO `npc_text` (`ID`, `text0_0`) VALUES
-(9001012,
-'$B$B"All I ask is something small in return. Something you already carry. Something you won''t even miss."$B$BThe portal pulses behind her. Waiting.$B$B"So. Do we have a deal?"$B$B');
+INSERT INTO `npc_text` (`ID`, `text0_0`) VALUES (9001012, '$B$B"All I ask is something small in return. Something you already carry. Something you won''t even miss."$B$BThe portal pulses behind her. Waiting.$B$B"So. Do we have a deal?"$B$B');
 
 -- ── Interaction template ──────────────────────────────────────────────────────
 
