@@ -6,6 +6,7 @@
  * Multi-level table follows cs_debug.cpp pattern exactly.
  */
 
+#include "ArchetypeMgr.h"
 #include "Chat.h"
 #include "CommandScript.h"
 #include "DynamicQuestMgr.h"
@@ -33,13 +34,14 @@ public:
             { "gate", HandleDQDebugGateCommand, rbac::RBAC_PERM_COMMAND_DEBUG, Console::No  },
         };
 
-        // .dq trigger  /  .dq trigger tier1  /  .dq trigger episode
+        // .dq trigger  /  .dq trigger tier1  /  .dq trigger episode  /  .dq trigger archetype
         // Empty-string entry = handler when no subcommand is given (.dq trigger [player])
         static ChatCommandTable dqTriggerTable =
         {
-            { "",        HandleDQTriggerCommand,        rbac::RBAC_PERM_COMMAND_DEBUG, Console::No  },
-            { "tier1",   HandleDQTriggerTier1Command,   rbac::RBAC_PERM_COMMAND_DEBUG, Console::No  },
-            { "episode", HandleDQTriggerEpisodeCommand, rbac::RBAC_PERM_COMMAND_DEBUG, Console::No  },
+            { "",          HandleDQTriggerCommand,          rbac::RBAC_PERM_COMMAND_DEBUG, Console::No  },
+            { "tier1",     HandleDQTriggerTier1Command,     rbac::RBAC_PERM_COMMAND_DEBUG, Console::No  },
+            { "episode",   HandleDQTriggerEpisodeCommand,   rbac::RBAC_PERM_COMMAND_DEBUG, Console::No  },
+            { "archetype", HandleDQTriggerArchetypeCommand, rbac::RBAC_PERM_COMMAND_DEBUG, Console::No  },
         };
 
         // .dq history  /  .dq history clear
@@ -130,6 +132,19 @@ public:
 
         sDQMgr->ForceTriggger(target, templateId);
         handler->PSendSysMessage("DQ+ episode {} triggered for {}.", templateId, target->GetName());
+        return true;
+    }
+
+    // .dq trigger archetype #id [player]  — bypasses zone check, useful for testing
+    static bool HandleDQTriggerArchetypeCommand(ChatHandler* handler,
+        uint32 archetypeId, Optional<PlayerIdentifier> targetArg)
+    {
+        Player* target = ResolveTarget(handler, targetArg);
+        if (!target)
+            return false;
+
+        sDQMgr->ForceTriggger(target, EncodeArchetypeId(archetypeId));
+        handler->PSendSysMessage("DQ+ archetype {} triggered for {}.", archetypeId, target->GetName());
         return true;
     }
 

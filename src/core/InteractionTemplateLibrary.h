@@ -35,6 +35,7 @@ enum DQMechanicType : uint8
 {
     DQ_MECHANIC_SUCCUBUS         = 7,
     DQ_MECHANIC_HUNGRY_CHILD     = 8,
+    DQ_MECHANIC_ARCHETYPE        = 9,  // data-driven multi-beat archetype engine
     DQ_MECHANIC_UNKNOWN          = 0xFF,
 };
 

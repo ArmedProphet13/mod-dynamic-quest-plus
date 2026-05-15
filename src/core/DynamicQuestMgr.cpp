@@ -11,6 +11,8 @@
 #include "NPCMatchingEngine.h"
 #include "MechanicSuccubus.h"
 #include "MechanicHungryChild.h"
+#include "MechanicArchetype.h"
+#include "ArchetypeMgr.h"
 #include "Chat.h"
 #include "Config.h"
 #include "Field.h"
@@ -81,16 +83,20 @@ void DynamicQuestMgr::Initialize()
     LoadConfig();
     sWorldCatalogue->LoadFromDB();
     sInteractionLib->LoadFromDB();
+    sArchetypeMgr->LoadFromDB();
     RegisterMechanics();
 
-    LOG_INFO("module.dynamicquests", "DynamicQuests+: Initialized. Templates={} CatalogueEntries={} Mechanics={}",
-        sInteractionLib->GetCount(), sWorldCatalogue->GetEntryCount(), _mechanics.size());
+    LOG_INFO("module.dynamicquests",
+        "DynamicQuests+: Initialized. Templates={} CatalogueEntries={} Archetypes={} Mechanics={}",
+        sInteractionLib->GetCount(), sWorldCatalogue->GetEntryCount(),
+        sArchetypeMgr->GetCount(), _mechanics.size());
 }
 
 void DynamicQuestMgr::RegisterMechanics()
 {
     _mechanics[DQ_MECHANIC_SUCCUBUS]     = std::make_unique<MechanicSuccubus>();
     _mechanics[DQ_MECHANIC_HUNGRY_CHILD] = std::make_unique<MechanicHungryChild>();
+    _mechanics[DQ_MECHANIC_ARCHETYPE]    = std::make_unique<MechanicArchetype>();
 }
 
 void DynamicQuestMgr::LoadConfig()
@@ -258,6 +264,20 @@ void DynamicQuestMgr::OnPlayerLogin(Player* player)
             })
     );
 
+    // Load archetype beat progress (separate table, separate async query)
+    std::string archSql = fmt::format(
+        "SELECT archetype_id, current_beat, completed "
+        "FROM character_dq_sequences WHERE guid={}",
+        player->GetGUID().GetCounter());
+
+    player->GetSession()->GetQueryProcessor().AddCallback(
+        CharacterDatabase.AsyncQuery(archSql).WithCallback(
+            [playerGuid](QueryResult result)
+            {
+                sDQMgr->ApplyArchetypeData(playerGuid, std::move(result));
+            })
+    );
+
     LOG_DEBUG("module.dynamicquests", "Player {} logged in. DQ data loading async.",
         player->GetName());
 }
@@ -318,7 +338,18 @@ void DynamicQuestMgr::OnInteractionComplete(Player* player)
 {
     PlayerDQState& ps = GetOrCreate(player->GetGUID());
     ReleasePhase(player, ps);
-    AddToHistory(ps, ps.activeTemplateId);
+
+    // Archetypes use character_dq_sequences for progression — only add to template
+    // history when the full arc is done so the archetype can re-trigger for later beats.
+    if (IsArchetypeId(ps.activeTemplateId))
+    {
+        if (ps.activeInst.completed)
+            AddToHistory(ps, ps.activeTemplateId);
+    }
+    else
+    {
+        AddToHistory(ps, ps.activeTemplateId);
+    }
 
     const InteractionTemplate* tmpl = sInteractionLib->GetById(ps.activeTemplateId);
     uint8 tier = tmpl ? tmpl->tier : 1;
@@ -373,8 +404,10 @@ void DynamicQuestMgr::ForceTriggger(Player* player, uint32 templateId)
 
     if (selectedTemplate == 0)
     {
-        uint8 playerLevel = static_cast<uint8>(player->GetLevel());
-        // Auto-select best template for current context (use authoritative level, not cached ctx)
+        uint8  playerLevel = static_cast<uint8>(player->GetLevel());
+        uint32 playerZone  = player->GetZoneId();
+
+        // Regular templates — pick first level-matching one as fallback
         for (const auto& tmpl : sInteractionLib->GetAll())
         {
             if (tmpl.levelMin <= playerLevel && tmpl.levelMax >= playerLevel)
@@ -384,12 +417,38 @@ void DynamicQuestMgr::ForceTriggger(Player* player, uint32 templateId)
             }
         }
 
+        // Archetypes — prefer over regular templates when eligible in current zone
+        std::vector<uint32> archetypeIds = sArchetypeMgr->GetEligible(playerZone, playerLevel);
+        for (uint32 arcId : archetypeIds)
+        {
+            auto it = ps.archetypeProgress.find(arcId);
+            if (it != ps.archetypeProgress.end() && it->second == 0xFF)
+                continue; // already completed
+            selectedTemplate = EncodeArchetypeId(arcId);
+            break;
+        }
+
         if (selectedTemplate == 0)
         {
-            LOG_ERROR("module.dynamicquests", "ForceTriggger: No template found for player {} (level={}, {} templates loaded).",
-                player->GetName(), playerLevel, sInteractionLib->GetCount());
+            LOG_ERROR("module.dynamicquests", "ForceTriggger: No template found for player {} (level={}, zone={}).",
+                player->GetName(), playerLevel, playerZone);
             return;
         }
+    }
+
+    // Archetype spawn path
+    if (IsArchetypeId(selectedTemplate))
+    {
+        CourierSelection sel;
+        sel.entry = sWorldCatalogue->GetCourierEntryForTheme("social");
+        if (sel.entry == 0)
+        {
+            LOG_WARN("module.dynamicquests", "ForceTriggger: No social courier entry for archetype {}.",
+                DecodeArchetypeId(selectedTemplate));
+            return;
+        }
+        SpawnCourier(player, ps, selectedTemplate, sel);
+        return;
     }
 
     const InteractionTemplate* tmpl = sInteractionLib->GetById(selectedTemplate);
@@ -583,6 +642,11 @@ const PlayerDQState* DynamicQuestMgr::Get(ObjectGuid guid) const
 
 IMechanicModule* DynamicQuestMgr::GetMechanic(uint32 templateId) const
 {
+    if (IsArchetypeId(templateId))
+    {
+        auto it = _mechanics.find(static_cast<uint8>(DQ_MECHANIC_ARCHETYPE));
+        return it != _mechanics.end() ? it->second.get() : nullptr;
+    }
     const InteractionTemplate* tmpl = sInteractionLib->GetById(templateId);
     if (!tmpl)
         return nullptr;
@@ -736,6 +800,20 @@ void DynamicQuestMgr::TryTrigger(Player* player, PlayerDQState& ps)
         }
     }
 
+    // Add eligible archetypes to the pool.
+    // Completed archetypes are excluded via the cached archetypeProgress map.
+    // Archetypes bypass the history check — progression is managed by character_dq_sequences.
+    {
+        std::vector<uint32> archetypeIds = sArchetypeMgr->GetEligible(ps.ctx.zoneId, ps.ctx.level);
+        for (uint32 arcId : archetypeIds)
+        {
+            auto it = ps.archetypeProgress.find(arcId);
+            if (it != ps.archetypeProgress.end() && it->second == 0xFF)
+                continue; // completed
+            pool.push_back({ EncodeArchetypeId(arcId), 10 });
+        }
+    }
+
     if (pool.empty())
         return;
 
@@ -751,6 +829,22 @@ void DynamicQuestMgr::TryTrigger(Player* player, PlayerDQState& ps)
     {
         roll -= p.second;
         if (roll < 0) { selectedId = p.first; break; }
+    }
+
+    // Archetype: synthesise CourierSelection — displayId override applied later in OnStart.
+    if (IsArchetypeId(selectedId))
+    {
+        CourierSelection sel;
+        sel.entry = sWorldCatalogue->GetCourierEntryForTheme("social");
+        if (sel.entry == 0)
+        {
+            LOG_WARN("module.dynamicquests",
+                "TryTrigger: No social courier entry for archetype {}. Skipping.",
+                DecodeArchetypeId(selectedId));
+            return;
+        }
+        SpawnCourier(player, ps, selectedId, sel);
+        return;
     }
 
     const InteractionTemplate* tmpl = sInteractionLib->GetById(selectedId);
@@ -955,6 +1049,56 @@ void DynamicQuestMgr::ApplyLoginData(ObjectGuid playerGuid, QueryResult result)
 
     LOG_DEBUG("module.dynamicquests", "Player {} DQ data applied. ileanaEp={} cooldown={}s",
         player->GetName(), ps.ileanaEpisode, ps.cooldownRemainMs / 1000);
+}
+
+void DynamicQuestMgr::ApplyArchetypeData(ObjectGuid playerGuid, QueryResult result)
+{
+    PlayerDQState& ps = GetOrCreate(playerGuid);
+    ps.archetypeProgress.clear();
+
+    if (result)
+    {
+        do
+        {
+            Field* f       = result->Fetch();
+            uint32 arcId   = f[0].Get<uint32>();
+            uint8  beat    = f[1].Get<uint8>();
+            bool   done    = f[2].Get<uint8>() != 0;
+            ps.archetypeProgress[arcId] = done ? 0xFF : beat;
+        } while (result->NextRow());
+    }
+
+    // One-time migration: if ileana_episode > 0 and archetype_id=1 has no row yet,
+    // seed character_dq_sequences from the legacy counter.
+    // Only fires when the Ileana archetype (id=1) has been authored in dq_archetype.
+    // Safe to run repeatedly — INSERT IGNORE is a no-op if the row already exists.
+    if (ps.archetypeProgress.find(1) == ps.archetypeProgress.end() && ps.ileanaEpisode > 0)
+    {
+        bool   done = (ps.ileanaEpisode >= 3);
+        uint8  beat = done ? 1 : (ps.ileanaEpisode + 1); // ep1=beat2, ep2=beat3, ep3=done
+        uint32 now  = static_cast<uint32>(GameTime::GetGameTime().count());
+
+        CharacterDatabase.Execute(
+            "INSERT IGNORE INTO character_dq_sequences "
+            "(guid, archetype_id, current_beat, beat_count, completed, last_seen) "
+            "VALUES ({}, 1, {}, 0, {}, {})",
+            playerGuid.GetCounter(), beat, done ? 1 : 0, now);
+
+        ps.archetypeProgress[1] = done ? 0xFF : beat;
+
+        LOG_DEBUG("module.dynamicquests",
+            "Migrated ileana_episode={} → character_dq_sequences archetype_id=1 beat={}.",
+            ps.ileanaEpisode, beat);
+    }
+
+    LOG_DEBUG("module.dynamicquests", "Archetype progress loaded: {} entries.",
+        ps.archetypeProgress.size());
+}
+
+void DynamicQuestMgr::OnArchetypeBeatAdvanced(Player* player, uint32 archetypeId, uint8 beatOrCompleted)
+{
+    PlayerDQState& ps = GetOrCreate(player->GetGUID());
+    ps.archetypeProgress[archetypeId] = beatOrCompleted;
 }
 
 uint8 DynamicQuestMgr::GetIleanaEpisode(Player* player) const

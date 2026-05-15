@@ -7,6 +7,10 @@
 --   Template 10 — Ileana Episode I   (tier 2, succubus)
 --   Template 11 — Ileana Episode II  (tier 2, succubus)
 --   Template 12 — Ileana Episode III (tier 2, succubus)
+--
+-- Archetypes (data-driven multi-beat engine — requires dq_archetype.sql schema):
+--   Archetype 1 — Ileana (reserved; Ileana migrated to archetype engine in a future pass)
+--   Archetype 2 — The Herb Seller  (4-beat Sequential, HiddenPurpose arc, zone 37)
 
 -- ===== base/dq_chest_items.sql =====
 -- DynamicQuests+ | Traveler's Treasure Chest items
@@ -322,3 +326,50 @@ INSERT INTO `dq_text_variant` (`template_id`, `variant_type`, `text`, `weight`) 
     (12, 'chase',    '"You can''t run from this one."',                                               5),
     (12, 'chase',    '"You''ve already made your choice. You just haven''t said it yet."',            5),
     (12, 'chase',    '"The third time. I don''t come a fourth."',                                     5);
+
+
+-- ===== base/dq_herb_seller.sql =====
+-- DynamicQuests+ | The Herb Seller — HiddenPurpose archetype (4-beat Sequential)
+--
+-- Story arc:
+--   Beat 1 (courier)  — NPC asks player to gather herbs; his back troubles him.
+--   Beat 2 (witness)  — Player sees him selling the same herbs at the market.
+--   Beat 3 (courier)  — NPC gives player coin, asks them to buy a carved toy horse.
+--   Beat 4 (witness)  — Player sees him give the toy to a laughing child.
+--
+-- Zone 37 = Hillsbrad Foothills. level_min=1, level_max=80.
+-- display_id=0 on all beats: courier uses its default social NPC model.
+
+DELETE FROM `dq_archetype`      WHERE `id` = 2;
+DELETE FROM `dq_archetype_beat` WHERE `archetype_id` = 2;
+
+INSERT INTO `dq_archetype`
+    (`id`, `name`,           `pattern`,    `total_beats`, `zone_id`, `level_min`, `level_max`, `enabled`)
+VALUES
+    (2,   'The Herb Seller', 'sequential', 4,              37,        1,           80,          1);
+
+INSERT INTO `dq_archetype_beat`
+    (`archetype_id`, `beat_number`, `display_id`, `zone_id`, `mechanic`, `transition_type`,  `transition_value`,
+     `text_greeting`,
+     `text_chase`,
+     `emote_on_arrive`, `emote_on_complete`, `reward_pool`)
+VALUES
+(2, 1, 0, 37, 'courier', 'quest_complete', 1,
+ 'Traveler! I hate to ask a stranger, but my back troubles me something fierce today. There are wild herbs growing just past the old fence — would you pick a handful? I can pay.',
+ 'Please — it would only take a moment!',
+ 25, 4, 'herb_seller_small'),
+
+(2, 2, 0, 37, 'witness', 'encounter_count', 1,
+ 'You catch sight of him at the market stall, calling out to buyers. The herbs you gathered are already bundled and priced.',
+ '',
+ 5, 0, ''),
+
+(2, 3, 0, 37, 'courier', 'quest_complete', 1,
+ 'Ah — you again. Good timing. Here, take this coin. There is a toy seller near the east gate. Buy me a small carved horse, would you? Child-sized.',
+ 'It is important. Please.',
+ 1, 4, ''),
+
+(2, 4, 0, 37, 'witness', 'encounter_count', 1,
+ 'The old man is crouched in the road, holding out the wooden horse. A small boy runs to him, laughing.',
+ '',
+ 4, 0, 'herb_seller_final');

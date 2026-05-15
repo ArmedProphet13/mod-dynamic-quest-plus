@@ -134,6 +134,11 @@ struct PlayerDQState
 
     // Internal: used for .dq status diagnostic output
     EligibilityResult lastGateResult = {};
+
+    // Per-archetype progress cache (loaded async at login, updated on beat completion).
+    // Key: archetype_id. Value: current_beat, or 0xFF when the archetype is completed.
+    // Absent entry means the player has never encountered this archetype (treat as beat 1).
+    std::unordered_map<uint32, uint8> archetypeProgress;
 };
 
 class Player;
@@ -176,6 +181,10 @@ public:
     // Called by MechanicModules on completion/failure.
     void OnInteractionComplete(Player* player);
     void OnInteractionFailed(Player* player);
+
+    // Called by MechanicArchetype when a beat advances.
+    // beatOrCompleted: next beat number, or 0xFF when the archetype is fully done.
+    void OnArchetypeBeatAdvanced(Player* player, uint32 archetypeId, uint8 beatOrCompleted);
 
     // --- GM Command API ---
 
@@ -253,8 +262,9 @@ private:
 
     void RegisterMechanics();
 
-    // Async login callback — runs on world thread via session QueryProcessor.
+    // Async login callbacks — run on world thread via session QueryProcessor.
     void ApplyLoginData(ObjectGuid playerGuid, QueryResult result);
+    void ApplyArchetypeData(ObjectGuid playerGuid, QueryResult result);
 
     // Per-player state map. Keyed by ObjectGuid raw value.
     std::unordered_map<uint64, PlayerDQState> _states;
