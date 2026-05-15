@@ -41,6 +41,13 @@ cmake_install.cmake
 !CMakeLists.txt
 
 #
+# Claude / AI assistant files
+.claude/
+CLAUDE.md
+*.claude
+claude_*
+
+#
 # Internal / private files — never commit these
 #
 DEV_GUIDE.md
