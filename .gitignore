@@ -48,6 +48,11 @@ CLAUDE.md
 claude_*
 
 #
+# Tools — private pipeline scripts, not part of the public module
+#
+tools/
+
+#
 # Internal / private files — never commit these
 #
 DEV_GUIDE.md

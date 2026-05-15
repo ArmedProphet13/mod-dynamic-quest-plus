@@ -108,7 +108,7 @@ public:
         switch (_phase)
         {
             case HCP_APPROACHING: TickApproaching(player, diff); break;
-            case HCP_ARRIVED:     TickArrived(player, diff);     break;
+            case HCP_ARRIVED:     TickArrived(diff);             break;
             case HCP_ACCEPTED:    TickAccepted(player, diff);    break;
             case HCP_DEPARTING:                                   break;
         }
@@ -212,7 +212,7 @@ private:
         }
     }
 
-    void TickArrived(Player* player, uint32 diff)
+    void TickArrived(uint32 diff)
     {
         if (_cryTimer <= diff)
         {
