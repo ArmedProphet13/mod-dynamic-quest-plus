@@ -32,6 +32,15 @@ nbproject/
 *.kate-swp
 
 #
+# CMake build artifacts
+#
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+*.cmake
+!CMakeLists.txt
+
+#
 # Eclipse
 #
 *.pydevproject

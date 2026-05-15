@@ -1,0 +1,68 @@
+[worldserver]
+
+########################################
+# DynamicQuests+ Module Configuration
+########################################
+
+#   DynamicQuests.Enable
+#       Description: Enable the DynamicQuests+ module.
+#       Default:     1 - Enabled
+#                    0 - Disabled
+DynamicQuests.Enable = 1
+
+#   DynamicQuests.Tier1MinTimerSeconds
+#   DynamicQuests.Tier1MaxTimerSeconds
+#       Description: Random cooldown window (seconds) between tier-1 field report
+#                    interactions. A value is rolled uniformly in [Min, Max] after
+#                    each interaction completes or is declined.
+#       Default:     1800 / 2700  (30min – 45min)
+DynamicQuests.Tier1MinTimerSeconds = 1800
+DynamicQuests.Tier1MaxTimerSeconds = 2700
+
+#   DynamicQuests.Tier2MinTimerSeconds
+#   DynamicQuests.Tier2MaxTimerSeconds
+#       Description: Random cooldown window (seconds) between tier-2 episode
+#                    interactions (warlock rituals, multi-phase encounters).
+#       Default:     5400 / 9000  (90min – 150min)
+DynamicQuests.Tier2MinTimerSeconds = 5400
+DynamicQuests.Tier2MaxTimerSeconds = 9000
+
+#   DynamicQuests.Tier2Chance
+#       Description: Base percentage chance (0-100) that an eligible trigger
+#                    selects a tier-2 episode instead of a tier-1 field report.
+#                    Boosted automatically when consecutive_tier1 >= 3.
+#       Default:     20
+DynamicQuests.Tier2Chance = 20
+
+#   DynamicQuests.ActivityWindowSeconds
+#       Description: How long (seconds) a player is considered "active" after
+#                    their last movement. Used by the eligibility gate and
+#                    the activity context (TRAVELING/GRINDING/EXPLORING/IDLE).
+#       Default:     30
+DynamicQuests.ActivityWindowSeconds = 30
+
+#   DynamicQuests.HistorySize
+#       Description: Number of recent interaction IDs stored per player to
+#                    prevent the same interaction from repeating too soon.
+#       Default:     10
+DynamicQuests.HistorySize = 10
+
+#   DynamicQuests.CourierSpeedBonus
+#       Description: Multiplier applied to the courier NPC's run speed so it
+#                    can intercept a moving player. 1.0 = no bonus.
+#       Default:     1.25
+DynamicQuests.CourierSpeedBonus = 1.25
+
+#   DynamicQuests.CourierTimeoutSeconds
+#       Description: Seconds before an inbound courier gives up and despawns
+#                    if it cannot reach the player (player moved away, went
+#                    indoors, entered combat, etc.).
+#       Default:     45
+DynamicQuests.CourierTimeoutSeconds = 45
+
+#   DynamicQuests.VerboseLogging
+#       Description: Enable verbose debug logging to the dynamicquests log
+#                    channel. Useful during development; disable in production.
+#       Default:     0 - Disabled
+#                    1 - Enabled
+DynamicQuests.VerboseLogging = 0
