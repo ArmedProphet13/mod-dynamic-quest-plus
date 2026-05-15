@@ -8,8 +8,7 @@
 --   - On deny:   short cry, child despawns.
 --
 -- creature_template 900040: the DQ_HungryChildAI base creature.
--- Model 18986 is a fallback human child display; the WorldCatalogue will
--- override this with a zone-appropriate child model at spawn time.
+-- Model 338 = Human Orphan (fallback; runtime overrides to race-appropriate child model).
 
 -- ── Creature template ──────────────────────────────────────────────────────────
 
@@ -39,7 +38,7 @@ VALUES
 
 DELETE FROM `creature_template_model` WHERE `CreatureID` = 900040;
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`)
-VALUES (900040, 0, 18986, 0.8, 1.0);  -- DisplayScale 0.8: slightly smaller than adults
+VALUES (900040, 0, 338, 0.8, 1.0);  -- 338 = Human Orphan (DisplayScale 0.8: slightly smaller than adults)
 
 -- ── Courier theme mapping ──────────────────────────────────────────────────────
 -- Maps theme 'hungry_child' → entry 900040 so NPCMatchingEngine resolves

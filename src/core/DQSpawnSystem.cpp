@@ -58,7 +58,7 @@ void DQSpawnSystem::ApplyScaling(Creature* c, Player* player, const DQSpawnDesc&
 void DQSpawnSystem::ApplyFlags(Creature* c, Player* player, const DQSpawnDesc& desc)
 {
     if (desc.displayId)
-        c->SetDisplayId(desc.displayId);
+        c->SetDisplayId(desc.displayId, true);  // setNative=true: prevents engine revert
 
     if (desc.faction)
     {
@@ -167,9 +167,13 @@ TempSummon* DQSpawnSystem::SpawnStationary(Player* player, const Position& pos,
         return nullptr;
     }
 
-    ApplyPhase(summon, desc.phaseBit);
+    // Apply display/faction/scaling before moving to private phase so the CREATE
+    // packet the client receives (after the player's phase is updated) already
+    // contains the correct model — prevents the engine's native display from
+    // overriding the race-specific child model on the phase join update.
     ApplyScaling(summon, player, desc);
     ApplyFlags(summon, player, desc);
+    ApplyPhase(summon, desc.phaseBit);
 
     return summon;
 }

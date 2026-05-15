@@ -82,7 +82,7 @@ enum DQPlayerState : uint8
     DQ_STATE_COOLDOWN   = 5, // interaction complete, counting down
 };
 
-static const char* DQPlayerStateStr(DQPlayerState s)
+inline const char* DQPlayerStateStr(DQPlayerState s)
 {
     switch (s)
     {

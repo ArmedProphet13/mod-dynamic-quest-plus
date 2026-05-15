@@ -210,53 +210,66 @@ static uint32 FindCandidate(Player* player, uint8 tier, bool wantWeapon)
     uint32 classMask = player->getClassMask();
     uint32 cls       = player->getClass();
 
-    uint32 levelMin  = (pLevel > 3) ? static_cast<uint32>(pLevel - 3) : 1;
-    uint32 levelMax  = static_cast<uint32>(pLevel);
+    // Two-pass level bracket: tight first, wider fallback for low levels / sparse tiers.
+    // Low-level characters have very few quality-2/3 items in a ±3 range; the wider
+    // pass recovers from empty results rather than delivering an empty chest.
+    struct Band { uint8 below; uint8 above; };
+    static constexpr Band kBands[] = { {3, 0}, {10, 5} };
 
-    std::vector<uint32> candidates;
-    candidates.reserve(64);
-
-    for (ItemTemplate const* tmpl : *sObjectMgr->GetItemTemplateStoreFast())
+    for (Band const& band : kBands)
     {
-        if (!tmpl)                                                         continue;
-        if (tmpl->Quality   != quality)                                    continue;
-        if (tmpl->Class     != itemClass)                                  continue;
-        if (tmpl->RequiredLevel == 0)                                      continue;
-        if (tmpl->RequiredLevel < levelMin || tmpl->RequiredLevel > levelMax) continue;
-        if (tmpl->Bonding   == BIND_QUEST_ITEM || tmpl->Bonding == BIND_QUEST_ITEM1) continue;
-        if (tmpl->StartQuest != 0)                                         continue;
-        if (tmpl->SellPrice == 0)                                          continue;
-        if (IsDevOrTestItem(tmpl->Name1))                                  continue;
-        if (IsTooHighItemLevel(tmpl->ItemLevel, tmpl->RequiredLevel))      continue;
+        uint32 levelMin = (pLevel > band.below) ? static_cast<uint32>(pLevel - band.below) : 1u;
+        uint32 levelMax = std::min(static_cast<uint32>(pLevel) + band.above, 79u);
 
-        if (wantWeapon)
+        std::vector<uint32> candidates;
+        candidates.reserve(64);
+
+        for (ItemTemplate const* tmpl : *sObjectMgr->GetItemTemplateStoreFast())
         {
-            if (!IsWeaponSlot(tmpl->InventoryType))                        continue;
-            if (!WeaponProficient(cls, tmpl->SubClass))                    continue;
-        }
-        else
-        {
-            if (!IsArmorBodySlot(tmpl->InventoryType))                     continue;
-            // Reject armor heavier than the class can wear
-            if (tmpl->SubClass >= ITEM_SUBCLASS_ARMOR_CLOTH &&
-                tmpl->SubClass <= ITEM_SUBCLASS_ARMOR_PLATE)
+            if (!tmpl)                                                         continue;
+            if (tmpl->Quality   != quality)                                    continue;
+            if (tmpl->Class     != itemClass)                                  continue;
+
+            // Items with RequiredLevel 0 have no restriction — treat them as level 1
+            // so low-level characters can receive early-game green/blue gear.
+            uint32 reqLvl = tmpl->RequiredLevel ? tmpl->RequiredLevel : 1u;
+            if (reqLvl < levelMin || reqLvl > levelMax)                        continue;
+
+            if (tmpl->Bonding   == BIND_QUEST_ITEM || tmpl->Bonding == BIND_QUEST_ITEM1) continue;
+            if (tmpl->StartQuest != 0)                                         continue;
+            if (tmpl->SellPrice == 0)                                          continue;
+            if (IsDevOrTestItem(tmpl->Name1))                                  continue;
+            if (IsTooHighItemLevel(tmpl->ItemLevel, reqLvl))                   continue;
+
+            if (wantWeapon)
             {
-                if (tmpl->SubClass > MaxArmorSubclass(cls))                continue;
+                if (!IsWeaponSlot(tmpl->InventoryType))                        continue;
+                if (!WeaponProficient(cls, tmpl->SubClass))                    continue;
             }
-            if (tmpl->SubClass >= ITEM_SUBCLASS_ARMOR_LIBRAM)             continue; // no relics
+            else
+            {
+                if (!IsArmorBodySlot(tmpl->InventoryType))                     continue;
+                // Reject armor heavier than the class can wear
+                if (tmpl->SubClass >= ITEM_SUBCLASS_ARMOR_CLOTH &&
+                    tmpl->SubClass <= ITEM_SUBCLASS_ARMOR_PLATE)
+                {
+                    if (tmpl->SubClass > MaxArmorSubclass(cls))                continue;
+                }
+                if (tmpl->SubClass >= ITEM_SUBCLASS_ARMOR_LIBRAM)             continue; // no relics
+            }
+
+            // AllowableClass -1 in DB becomes 0xFFFFFFFF as uint32
+            if (tmpl->AllowableClass != 0xFFFFFFFF &&
+                !(tmpl->AllowableClass & classMask))                           continue;
+
+            candidates.push_back(tmpl->ItemId);
         }
 
-        // AllowableClass -1 in DB becomes 0xFFFFFFFF as uint32
-        if (tmpl->AllowableClass != 0xFFFFFFFF &&
-            !(tmpl->AllowableClass & classMask))                           continue;
-
-        candidates.push_back(tmpl->ItemId);
+        if (!candidates.empty())
+            return candidates[urand(0, static_cast<uint32>(candidates.size()) - 1)];
     }
 
-    if (candidates.empty())
-        return 0;
-
-    return candidates[urand(0, static_cast<uint32>(candidates.size()) - 1)];
+    return 0;
 }
 
 // ── PlayerScript ──────────────────────────────────────────────────────────────
@@ -280,6 +293,9 @@ public:
         bool   isWeapon  = ChestIsWeapon(entry);
 
         uint32 gearEntry = FindCandidate(player, tier, isWeapon);
+        // Quality fallback: if blue/purple yields nothing (e.g. level < 20), try one tier lower
+        if (gearEntry == 0 && tier > 0)
+            gearEntry = FindCandidate(player, static_cast<uint8>(tier - 1), isWeapon);
 
         // Mark as generated first: prevents FillLoot from overwriting our content
         item->m_lootGenerated = true;
