@@ -55,6 +55,11 @@ CREATE TABLE IF NOT EXISTS `dq_archetype_beat` (
   `prop_entry`       INT UNSIGNED     NOT NULL DEFAULT 0,  -- GO entry to scatter (0 = no props)
   `prop_count`       TINYINT UNSIGNED NOT NULL DEFAULT 1,  -- how many GOs to scatter
   `prop_radius`      FLOAT            NOT NULL DEFAULT 12.0, -- scatter radius around player (yards)
+  -- System 4: Emotion/Emote
+  `emotion`          VARCHAR(32)      NOT NULL DEFAULT '',  -- emotional state driving emote sequences
+  `emotion_end`      VARCHAR(32)      NOT NULL DEFAULT '',  -- resolution state on beat complete (blank = auto-resolve)
+  `text_on_accept`   VARCHAR(500)     NOT NULL DEFAULT '',  -- NPC says this when player accepts
+  `text_on_complete` VARCHAR(500)     NOT NULL DEFAULT '',  -- NPC says this when beat completes
   PRIMARY KEY (`id`),
   KEY `idx_archetype_beat` (`archetype_id`, `beat_number`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

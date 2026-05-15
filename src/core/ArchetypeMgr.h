@@ -71,6 +71,11 @@ struct ArchetypeBeat
     uint32           propEntry       = 0;   // GO entry to scatter (0 = no props)
     uint8            propCount       = 1;   // how many GOs to scatter
     float            propRadius      = 12.f; // scatter radius (yards)
+    // System 4: Emotion/Emote
+    std::string      emotion;              // emotional state ("sad", "anxious", etc.; empty = no emotion)
+    std::string      emotionEnd;           // explicit resolution; empty = use default resolution table
+    std::string      textOnAccept;         // NPC says this when player accepts
+    std::string      textOnComplete;       // NPC says this when beat completes
 };
 
 // ---------------------------------------------------------------------------

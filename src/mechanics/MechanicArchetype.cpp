@@ -13,6 +13,7 @@
 
 #include "MechanicArchetype.h"
 #include "ArchetypeMgr.h"
+#include "DQEmotionEngine.h"
 #include "DQSpawnSystem.h"
 #include "DynamicQuestMgr.h"
 #include "Creature.h"
@@ -119,9 +120,29 @@ void MechanicArchetype::CompleteBeat(Player* player, InteractionInstance& inst)
     uint32 archetypeId = DecodeArchetypeId(inst.templateId);
     const ArchetypeBeat* beat = sArchetypeMgr->GetBeat(archetypeId, inst.currentPhase);
 
-    if (beat && beat->emoteOnComplete != 0)
-        if (Creature* courier = player->GetMap()->GetCreature(inst.courierGuid))
-            courier->HandleEmoteCommand(static_cast<uint32>(beat->emoteOnComplete));
+    if (beat)
+    {
+        Creature* courier = player->GetMap()->GetCreature(inst.courierGuid);
+
+        // Legacy single-emote override (non-zero emoteOnComplete bypasses emotion system)
+        if (beat->emoteOnComplete != 0 && courier)
+            courier->HandleEmoteCommand(static_cast<Emote>(beat->emoteOnComplete));
+        else if (courier)
+        {
+            // Resolve emotion_end → play first step of its onComplete sequence
+            std::string resName = beat->emotionEnd.empty()
+                ? sDQEmotions->GetDefaultResolution(beat->emotion)
+                : beat->emotionEnd;
+            if (!resName.empty())
+                if (const DQEmotionDef* res = sDQEmotions->GetResolution(resName))
+                    if (!res->onComplete.empty() && res->onComplete[0].emote != 0)
+                        courier->HandleEmoteCommand(static_cast<Emote>(res->onComplete[0].emote));
+        }
+
+        // text_on_complete say (fires after resolution emote)
+        if (!beat->textOnComplete.empty() && courier)
+            courier->Say(beat->textOnComplete, LANG_UNIVERSAL);
+    }
 
     AdvanceBeat(player, inst);
     sDQMgr->OnInteractionComplete(player);
@@ -273,7 +294,7 @@ void MechanicArchetype::OnCleanup(Player* player, InteractionInstance& inst)
 {
     if (!inst.courierGuid.IsEmpty())
         if (Creature* courier = player->GetMap()->GetCreature(inst.courierGuid))
-            courier->DespawnOrUnsummon(Milliseconds(500));
+            courier->DespawnOrUnsummon(Milliseconds(2500)); // delay lets resolution emote play
 
     for (ObjectGuid guid : inst.auxGuidList)
         if (GameObject* go = player->GetMap()->GetGameObject(guid))

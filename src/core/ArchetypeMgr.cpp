@@ -54,7 +54,8 @@ void ArchetypeMgr::LoadFromDB()
         "SELECT archetype_id, beat_number, display_id, zone_id, mechanic, "
         "transition_type, transition_value, text_greeting, text_chase, "
         "emote_on_arrive, emote_on_complete, reward_pool, "
-        "spawn_style, prop_entry, prop_count, prop_radius "
+        "spawn_style, prop_entry, prop_count, prop_radius, "
+        "emotion, emotion_end, text_on_accept, text_on_complete "
         "FROM dq_archetype_beat ORDER BY archetype_id, beat_number");
 
     uint32 beatCount = 0;
@@ -80,6 +81,10 @@ void ArchetypeMgr::LoadFromDB()
             beat.propEntry       = f[13].Get<uint32>();
             beat.propCount       = f[14].Get<uint8>();
             beat.propRadius      = f[15].Get<float>();
+            beat.emotion         = f[16].Get<std::string>();
+            beat.emotionEnd      = f[17].Get<std::string>();
+            beat.textOnAccept    = f[18].Get<std::string>();
+            beat.textOnComplete  = f[19].Get<std::string>();
 
             auto it = _idIndex.find(beat.archetypeId);
             if (it != _idIndex.end())

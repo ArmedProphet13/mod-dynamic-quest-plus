@@ -13,6 +13,7 @@
 #include "MechanicHungryChild.h"
 #include "MechanicArchetype.h"
 #include "ArchetypeMgr.h"
+#include "DQEmotionEngine.h"
 #include "Chat.h"
 #include "Config.h"
 #include "Field.h"
@@ -100,6 +101,7 @@ DynamicQuestMgr* DynamicQuestMgr::instance()
 void DynamicQuestMgr::Initialize()
 {
     LoadConfig();
+    sDQEmotions->Initialize();
     sWorldCatalogue->LoadFromDB();
     sInteractionLib->LoadFromDB();
     sArchetypeMgr->LoadFromDB();

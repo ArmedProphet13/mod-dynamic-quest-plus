@@ -355,39 +355,48 @@ INSERT INTO `dq_archetype_beat`
      `mechanic`,  `transition_type`,  `transition_value`,
      `text_greeting`, `text_chase`,
      `emote_on_arrive`, `emote_on_complete`, `reward_pool`,
-     `spawn_style`, `prop_entry`, `prop_count`, `prop_radius`)
+     `spawn_style`, `prop_entry`, `prop_count`, `prop_radius`,
+     `emotion`, `emotion_end`, `text_on_accept`, `text_on_complete`)
 VALUES
--- Beat 1: herb gather — 3 Herb Bundle GOs scatter nearby; player clicks each one
+-- Beat 1: herb gather — hopeful old man with a bad back asks for help
 (2, 1, 0, 37,
  'activate', 'quest_complete', 3,
  'Traveler! I hate to ask a stranger, but my back troubles me something fierce today. There are wild herbs growing just past the old fence — would you pick a handful? I can pay.',
  'Please — it would only take a moment!',
- 25, 4, 'herb_seller_small',
- 'approaches', 900100, 3, 12.0),
+ 0, 0, 'herb_seller_small',
+ 'approaches', 900100, 3, 12.0,
+ 'hopeful', 'grateful',
+ 'Bless you, friend. I knew you had a kind heart.',
+ 'Thank you. Truly.'),
 
--- Beat 2: witness — old man selling herbs at market stall
+-- Beat 2: witness — old man at his market stall, businesslike and composed
 (2, 2, 0, 37,
  'witness', 'encounter_count', 1,
  'You catch sight of him at the market stall, calling out to buyers. The herbs you gathered are already bundled and priced.',
  '',
- 5, 0, '',
- 'waiting', 0, 0, 0.0),
+ 0, 0, '',
+ 'waiting', 0, 0, 0.0,
+ 'solemn', '', '', ''),
 
--- Beat 3: courier task — NPC hands player a coin, asks for carved horse
+-- Beat 3: courier task — grateful to see player again, sends them for a toy
 (2, 3, 0, 37,
  'courier', 'encounter_count', 1,
  'Ah — you again. Good timing. Here, take this coin. There is a toy seller near the east gate. Buy me a small carved horse, would you? Child-sized.',
  'It is important. Please.',
- 1, 4, '',
- 'approaches', 0, 0, 0.0),
+ 0, 0, '',
+ 'approaches', 0, 0, 0.0,
+ 'grateful', 'moved',
+ 'I will be here when you return.',
+ 'Perfect. Just perfect.'),
 
--- Beat 4: witness — old man gives the horse to a laughing child
+-- Beat 4: witness — old man gives the horse to his child, pure joy
 (2, 4, 0, 37,
  'witness', 'encounter_count', 1,
  'The old man is crouched in the road, holding out the wooden horse. A small boy runs to him, laughing.',
  '',
- 4, 0, 'herb_seller_final',
- 'waiting', 0, 0, 0.0);
+ 0, 0, 'herb_seller_final',
+ 'waiting', 0, 0, 0.0,
+ 'happy', 'joyful', '', '');
 
 -- ===== base/dq_gameobject_template.sql =====
 -- DQ+ interactable prop GOs (entries 900100-900102, type 22 GOOBER, ScriptName DQ_PropGO).
