@@ -5,12 +5,7 @@
 
 #include "DynamicQuestMgr.h"
 #include "DQSpawnSystem.h"
-#include "AreaDefines.h"
 #include "WorldCatalogue.h"
-#include "InteractionTemplateLibrary.h"
-#include "NPCMatchingEngine.h"
-#include "MechanicSuccubus.h"
-#include "MechanicHungryChild.h"
 #include "MechanicArchetype.h"
 #include "ArchetypeMgr.h"
 #include "DQEmotionEngine.h"
@@ -28,41 +23,11 @@
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "WorldSession.h"
-#include "SpellAuras.h"
 #include "TemporarySummon.h"
 #include <cmath>
 #include <random>
 #include <sstream>
 #include <fmt/format.h>
-
-// Returns the faction alignment of a capital city by zone/area ID.
-// Uses AreaDefines.h constants — no magic numbers.
-static DQZoneFaction GetZoneFaction(uint32 zoneId, uint32 areaId)
-{
-    auto classify = [](uint32 id) -> DQZoneFaction {
-        switch (id)
-        {
-            case AREA_STORMWIND_CITY:
-            case AREA_IRONFORGE:
-            case AREA_DARNASSUS:
-            case AREA_THE_EXODAR:
-                return DQ_FACTION_ALLIANCE;
-            case AREA_UNDERCITY:
-            case AREA_ORGRIMMAR:
-            case AREA_THUNDER_BLUFF:
-            case AREA_SILVERMOON_CITY:
-                return DQ_FACTION_HORDE;
-            case AREA_DALARAN:
-            case AREA_SHATTRATH_CITY:
-                return DQ_FACTION_NEUTRAL;
-            default:
-                return DQ_FACTION_ANY;
-        }
-    };
-    DQZoneFaction zf = classify(zoneId);
-    if (zf != DQ_FACTION_ANY) return zf;
-    return classify(areaId); // fallback: check sub-area (Silvermoon, Exodar sub-areas)
-}
 
 // Splits a comma-separated tag expression (e.g. "humanoid,male,peasant") into a vector.
 static std::vector<std::string> SplitTags(const std::string& tagExpr)
@@ -104,21 +69,18 @@ void DynamicQuestMgr::Initialize()
     sDQEmotions->Initialize();
     sDQContext->Initialize();
     sWorldCatalogue->LoadFromDB();
-    sInteractionLib->LoadFromDB();
     sArchetypeMgr->LoadFromDB();
     RegisterMechanics();
 
     LOG_INFO("module.dynamicquests",
-        "DynamicQuests+: Initialized. Templates={} CatalogueEntries={} Archetypes={} Mechanics={}",
-        sInteractionLib->GetCount(), sWorldCatalogue->GetEntryCount(),
-        sArchetypeMgr->GetCount(), _mechanics.size());
+        "DynamicQuests+: Initialized. CatalogueEntries={} Archetypes={} Mechanics={}",
+        sWorldCatalogue->GetEntryCount(), sArchetypeMgr->GetCount(), _mechanics.size());
 }
 
 void DynamicQuestMgr::RegisterMechanics()
 {
-    _mechanics[DQ_MECHANIC_SUCCUBUS]     = std::make_unique<MechanicSuccubus>();
-    _mechanics[DQ_MECHANIC_HUNGRY_CHILD] = std::make_unique<MechanicHungryChild>();
-    _mechanics[DQ_MECHANIC_ARCHETYPE]    = std::make_unique<MechanicArchetype>();
+    static constexpr uint8 MTYPE_ARCHETYPE = 9;
+    _mechanics[MTYPE_ARCHETYPE] = std::make_unique<MechanicArchetype>();
 }
 
 void DynamicQuestMgr::LoadConfig()
@@ -139,9 +101,9 @@ void DynamicQuestMgr::LoadConfig()
 void DynamicQuestMgr::ReloadTemplates()
 {
     sWorldCatalogue->LoadFromDB();
-    sInteractionLib->LoadFromDB();
-    LOG_INFO("module.dynamicquests", "DynamicQuests+: Templates reloaded. Templates={} CatalogueEntries={}",
-        sInteractionLib->GetCount(), sWorldCatalogue->GetEntryCount());
+    sArchetypeMgr->LoadFromDB();
+    LOG_INFO("module.dynamicquests", "DynamicQuests+: Reloaded. CatalogueEntries={} Archetypes={}",
+        sWorldCatalogue->GetEntryCount(), sArchetypeMgr->GetCount());
 }
 
 // ---------------------------------------------------------------------------
@@ -230,22 +192,18 @@ void DynamicQuestMgr::OnPlayerLogout(Player* player)
         "(guid,last_template_1,last_template_2,last_template_3,last_template_4,"
         "last_template_5,last_template_6,last_template_7,last_template_8,"
         "last_template_9,last_template_10,"
-        "last_courier_theme,last_episode_id,next_trigger_time,consecutive_tier1,"
-        "ileana_episode,soul_debt_until) "
-        "VALUES ({},{},{},{},{},{},{},{},{},{},{},'{}',{},{},{},{},{}) "
+        "last_courier_theme,last_episode_id,next_trigger_time,consecutive_tier1) "
+        "VALUES ({},{},{},{},{},{},{},{},{},{},{},'{}',0,{},{}) "
         "ON DUPLICATE KEY UPDATE "
         "last_template_1={},last_template_2={},last_template_3={},last_template_4={},"
         "last_template_5={},last_template_6={},last_template_7={},last_template_8={},"
         "last_template_9={},last_template_10={},"
-        "last_courier_theme='{}',last_episode_id={},next_trigger_time={},consecutive_tier1={},"
-        "ileana_episode={},soul_debt_until={}",
+        "last_courier_theme='{}',next_trigger_time={},consecutive_tier1={}",
         player->GetGUID().GetCounter(),
         h[0],h[1],h[2],h[3],h[4],h[5],h[6],h[7],h[8],h[9],
-        ps.lastCourierTheme, ps.lastEpisodeId, nextTrigger, ps.consecutiveTier1,
-        ps.ileanaEpisode, ps.soulDebtUntil,
+        ps.lastCourierTheme, nextTrigger, ps.consecutiveTier1,
         h[0],h[1],h[2],h[3],h[4],h[5],h[6],h[7],h[8],h[9],
-        ps.lastCourierTheme, ps.lastEpisodeId, nextTrigger, ps.consecutiveTier1,
-        ps.ileanaEpisode, ps.soulDebtUntil);
+        ps.lastCourierTheme, nextTrigger, ps.consecutiveTier1);
 
     _states.erase(player->GetGUID().GetRawValue());
 
@@ -273,8 +231,7 @@ void DynamicQuestMgr::OnPlayerLogin(Player* player)
         "SELECT last_template_1,last_template_2,last_template_3,last_template_4,"
         "last_template_5,last_template_6,last_template_7,last_template_8,"
         "last_template_9,last_template_10,"
-        "last_courier_theme,last_episode_id,next_trigger_time,consecutive_tier1,"
-        "ileana_episode,soul_debt_until "
+        "last_courier_theme,next_trigger_time,consecutive_tier1 "
         "FROM character_dq_history WHERE guid={}",
         player->GetGUID().GetCounter());
 
@@ -361,41 +318,20 @@ void DynamicQuestMgr::OnInteractionComplete(Player* player)
     PlayerDQState& ps = GetOrCreate(player->GetGUID());
     ReleasePhase(player, ps);
 
-    // Archetypes use character_dq_sequences for progression — only add to template
-    // history when the full arc is done so the archetype can re-trigger for later beats.
-    if (IsArchetypeId(ps.activeTemplateId))
-    {
-        if (ps.activeInst.completed)
-            AddToHistory(ps, ps.activeTemplateId);
-    }
-    else
-    {
+    // Archetypes: only add to history when the full arc is done.
+    if (IsArchetypeId(ps.activeTemplateId) && ps.activeInst.completed)
         AddToHistory(ps, ps.activeTemplateId);
-    }
 
-    const InteractionTemplate* tmpl = sInteractionLib->GetById(ps.activeTemplateId);
-    uint8 tier = tmpl ? tmpl->tier : 1;
-
-    // Advance the Ileana encounter counter when an episode completes.
-    if (ps.activeTemplateId >= 10 && ps.activeTemplateId <= 12)
-        ps.ileanaEpisode = std::min<uint8>(ps.ileanaEpisode + 1, 3);
-
-    if (tier == 1)
-        ps.consecutiveTier1++;
-    else
-    {
-        ps.consecutiveTier1 = 0;
-        ps.lastEpisodeId = ps.activeTemplateId;
-    }
+    ps.consecutiveTier1++;
 
     ps.activeTemplateId = 0;
     ps.activeQuestId    = 0;
 
     TransitionState(player, ps, DQ_STATE_COOLDOWN);
-    ps.cooldownRemainMs = RollCooldown(tier);
+    ps.cooldownRemainMs = RollCooldown(1);
 
-    LOG_INFO("module.dynamicquests", "Player {} completed interaction. tier={} cooldown={}s",
-        player->GetName(), tier, ps.cooldownRemainMs / 1000);
+    LOG_INFO("module.dynamicquests", "Player {} completed interaction. cooldown={}s",
+        player->GetName(), ps.cooldownRemainMs / 1000);
 }
 
 void DynamicQuestMgr::OnInteractionFailed(Player* player)
@@ -429,17 +365,7 @@ void DynamicQuestMgr::ForceTriggger(Player* player, uint32 templateId)
         uint8  playerLevel = static_cast<uint8>(player->GetLevel());
         uint32 playerZone  = player->GetZoneId();
 
-        // Regular templates — pick first level-matching one as fallback
-        for (const auto& tmpl : sInteractionLib->GetAll())
-        {
-            if (tmpl.levelMin <= playerLevel && tmpl.levelMax >= playerLevel)
-            {
-                selectedTemplate = tmpl.id;
-                break;
-            }
-        }
-
-        // Archetypes — prefer over regular templates when eligible in current zone
+        // Archetypes — pick eligible one by level/zone/tags
         PlayerContext fctx;
         fctx.zoneId     = playerZone;
         fctx.areaId     = player->GetAreaId();
@@ -484,22 +410,7 @@ void DynamicQuestMgr::ForceTriggger(Player* player, uint32 templateId)
                 sel.displayId = sWorldCatalogue->GetWorldCourierDisplayId(
                     ps.ctx.zoneId, SplitTags(def->appearance), {}, 1);
         SpawnCourier(player, ps, selectedTemplate, sel);
-        return;
     }
-
-    const InteractionTemplate* tmpl = sInteractionLib->GetById(selectedTemplate);
-    if (!tmpl)
-        return;
-
-    CourierSelection sel = NPCMatchingEngine::FindBestCourier(*tmpl, ps.ctx);
-
-    if (sel.entry == 0)
-    {
-        LOG_WARN("module.dynamicquests", "ForceTriggger: No courier entry found for template {}.", selectedTemplate);
-        return;
-    }
-
-    SpawnCourier(player, ps, selectedTemplate, sel);
 }
 
 void DynamicQuestMgr::AbortInteraction(Player* player)
@@ -565,7 +476,6 @@ std::string DynamicQuestMgr::GetStatusString(Player* player) const
         ss << id << " ";
     ss << "\n";
     ss << "Last theme : " << ps->lastCourierTheme << "\n";
-    ss << "Last episode: " << ps->lastEpisodeId << "\n";
     ss << "Tier2 escalation: " << static_cast<int>(ps->consecutiveTier1)
        << "/3 (boost at 3 consecutive tier 1)\n";
 
@@ -605,7 +515,6 @@ void DynamicQuestMgr::ClearHistory(Player* player)
     PlayerDQState& ps = GetOrCreate(player->GetGUID());
     ps.history.clear();
     ps.lastCourierTheme.clear();
-    ps.lastEpisodeId    = 0;
     ps.consecutiveTier1 = 0;
     CharacterDatabase.Execute("DELETE FROM character_dq_history WHERE guid = {}",
         player->GetGUID().GetCounter());
@@ -688,18 +597,11 @@ const PlayerDQState* DynamicQuestMgr::Get(ObjectGuid guid) const
 
 IMechanicModule* DynamicQuestMgr::GetMechanic(uint32 templateId) const
 {
-    if (IsArchetypeId(templateId))
-    {
-        auto it = _mechanics.find(static_cast<uint8>(DQ_MECHANIC_ARCHETYPE));
-        return it != _mechanics.end() ? it->second.get() : nullptr;
-    }
-    const InteractionTemplate* tmpl = sInteractionLib->GetById(templateId);
-    if (!tmpl)
+    if (!IsArchetypeId(templateId))
         return nullptr;
-    auto it = _mechanics.find(static_cast<uint8>(tmpl->mechanicType));
-    if (it == _mechanics.end())
-        return nullptr;
-    return it->second.get();
+    static constexpr uint8 MTYPE_ARCHETYPE = 9;
+    auto it = _mechanics.find(MTYPE_ARCHETYPE);
+    return it != _mechanics.end() ? it->second.get() : nullptr;
 }
 
 void DynamicQuestMgr::TickOnQuest(Player* player, PlayerDQState& ps, uint32 diff)
@@ -766,92 +668,9 @@ void DynamicQuestMgr::TryTrigger(Player* player, PlayerDQState& ps)
     DQTagSet tags = sDQContext->Resolve(player, ps.ctx);
     ps.lastResolvedTags = tags;
 
-    const auto& all = sInteractionLib->GetAll();
-    if (all.empty())
-        return;
-
-    uint8 contextScore = EligibilityEngine::GetContextScore(ps.ctx);
-
-    uint32 tier2Pct = cfg_tier2Chance;
-    if (ps.consecutiveTier1 >= 3)
-        tier2Pct = std::min(50u, tier2Pct + 30);
-
-    static std::mt19937 rng{ std::random_device{}() };
-    std::uniform_int_distribution<uint32> tierRoll(0, 99);
-    uint8 targetTier = (tierRoll(rng) < tier2Pct) ? 2 : 1;
-
-    // Filter candidates
-    std::vector<std::pair<uint32, int32>> pool; // (templateId, weight)
-    for (const auto& tmpl : all)
-    {
-        if (tmpl.tier != targetTier)
-            continue;
-        if (tmpl.levelMin > ps.ctx.level || tmpl.levelMax < ps.ctx.level)
-            continue;
-        if (tmpl.prereqGold > ps.ctx.goldCopper)
-            continue;
-        // Zone type check: capital templates only fire in capital cities;
-        // outdoor templates are blocked inside capitals (the eligibility passOutdoors
-        // gate already blocks buildings, so this handles zone category).
-        {
-            bool inCapital = (GetZoneFaction(ps.ctx.zoneId, ps.ctx.areaId) != DQ_FACTION_ANY);
-            if (tmpl.zoneType == DQ_ZONE_CAPITAL && !inCapital)
-                continue;
-            if (tmpl.zoneType == DQ_ZONE_OUTDOOR && inCapital)
-                continue;
-        }
-        // Zone faction check — prevents e.g. hungry_child (alliance) firing in Undercity
-        if (tmpl.zoneFaction != DQ_FACTION_ANY)
-        {
-            DQZoneFaction zf = GetZoneFaction(ps.ctx.zoneId, ps.ctx.areaId);
-            if (zf != DQ_FACTION_ANY && zf != tmpl.zoneFaction)
-                continue;
-        }
-
-        // History check
-        bool inHistory = false;
-        for (uint32 hid : ps.history)
-            if (hid == tmpl.id) { inHistory = true; break; }
-        if (inHistory)
-            continue;
-
-        // Ileana episode gating: templates 10/11/12 require exact episode progression.
-        // Template 10 = ep1 (ileanaEpisode must be 0), 11 = ep2 (must be 1), 12 = ep3 (must be 2).
-        // Once all 3 are done (ileanaEpisode == 3) none of them may fire again.
-        if (tmpl.id >= 10 && tmpl.id <= 12)
-        {
-            uint8 req = static_cast<uint8>(tmpl.id - 10); // 10→0, 11→1, 12→2
-            if (ps.ileanaEpisode != req)
-                continue;
-        }
-
-        // Context weight boost
-        int32 weight = tmpl.rarityWeight;
-        if (tmpl.contextMask & contextScore)
-            weight = static_cast<int32>(weight * 1.5f);
-
-        pool.push_back({ tmpl.id, weight });
-    }
-
-    // Fallback: if no tier2 found, try tier1
-    if (pool.empty() && targetTier == 2)
-    {
-        targetTier = 1;
-        for (const auto& tmpl : all)
-        {
-            if (tmpl.tier != 1) continue;
-            if (tmpl.levelMin > ps.ctx.level || tmpl.levelMax < ps.ctx.level) continue;
-            bool inHistory = false;
-            for (uint32 hid : ps.history)
-                if (hid == tmpl.id) { inHistory = true; break; }
-            if (inHistory) continue;
-            pool.push_back({ tmpl.id, tmpl.rarityWeight });
-        }
-    }
-
-    // Add eligible archetypes to the pool.
-    // Completed archetypes are excluded via the cached archetypeProgress map.
-    // Archetypes bypass the history check — progression is managed by character_dq_sequences.
+    // Build pool from eligible archetypes.
+    // Completed archetypes are excluded; progression tracked in character_dq_sequences.
+    std::vector<std::pair<uint32, int32>> pool; // (encoded templateId, weight)
     {
         std::vector<uint32> archetypeIds = sArchetypeMgr->GetEligible(ps.ctx.zoneId, ps.ctx.level, tags);
         for (uint32 arcId : archetypeIds)
@@ -867,6 +686,7 @@ void DynamicQuestMgr::TryTrigger(Player* player, PlayerDQState& ps)
         return;
 
     // Weighted random selection
+    static std::mt19937 rng{ std::random_device{}() };
     int32 totalWeight = 0;
     for (auto& p : pool)
         totalWeight += p.second;
@@ -880,39 +700,19 @@ void DynamicQuestMgr::TryTrigger(Player* player, PlayerDQState& ps)
         if (roll < 0) { selectedId = p.first; break; }
     }
 
-    // Archetype: synthesise CourierSelection — appearance tags drive display ID selection.
-    if (IsArchetypeId(selectedId))
-    {
-        uint32 archetypeId = DecodeArchetypeId(selectedId);
-        CourierSelection sel;
-        sel.entry = sWorldCatalogue->GetCourierEntryForTheme("social");
-        if (sel.entry == 0)
-        {
-            LOG_WARN("module.dynamicquests",
-                "TryTrigger: No social courier entry for archetype {}. Skipping.",
-                archetypeId);
-            return;
-        }
-        if (const ArchetypeDef* def = sArchetypeMgr->Get(archetypeId))
-            if (!def->appearance.empty())
-                sel.displayId = sWorldCatalogue->GetWorldCourierDisplayId(
-                    ps.ctx.zoneId, SplitTags(def->appearance), {}, 1);
-        SpawnCourier(player, ps, selectedId, sel);
-        return;
-    }
-
-    const InteractionTemplate* tmpl = sInteractionLib->GetById(selectedId);
-    if (!tmpl)
-        return;
-
-    // Find courier NPC
-    CourierSelection sel = NPCMatchingEngine::FindBestCourier(*tmpl, ps.ctx);
+    uint32 archetypeId = DecodeArchetypeId(selectedId);
+    CourierSelection sel;
+    sel.entry = sWorldCatalogue->GetCourierEntryForTheme("social");
     if (sel.entry == 0)
     {
-        LOG_DEBUG("module.dynamicquests.nme", "TryTrigger: No courier found for template {}. Skipping.",
-            selectedId);
+        LOG_WARN("module.dynamicquests",
+            "TryTrigger: No social courier entry for archetype {}. Skipping.", archetypeId);
         return;
     }
+    if (const ArchetypeDef* def = sArchetypeMgr->Get(archetypeId))
+        if (!def->appearance.empty())
+            sel.displayId = sWorldCatalogue->GetWorldCourierDisplayId(
+                ps.ctx.zoneId, SplitTags(def->appearance), {}, 1);
 
     SpawnCourier(player, ps, selectedId, sel);
 }
@@ -928,72 +728,20 @@ bool DynamicQuestMgr::SpawnCourier(Player* player, PlayerDQState& ps,
         LOG_WARN("module.dynamicquests",
             "Phase pool exhausted — courier for player {} is world-visible.", player->GetName());
 
-    const InteractionTemplate* tmplPtr = sInteractionLib->GetById(templateId);
-    bool isSuccubus     = (tmplPtr && tmplPtr->mechanicType == DQ_MECHANIC_SUCCUBUS);
-    bool isHungryChild  = (tmplPtr && tmplPtr->mechanicType == DQ_MECHANIC_HUNGRY_CHILD);
-
     DQSpawnDesc desc;
     desc.entry      = sel.entry;
     desc.phaseBit   = phaseBit;
     desc.displayId  = sel.displayId;
     desc.scaleLevel = true;
 
-    // HungryChild: override with a faction/race-appropriate humanoid child model.
-    // Never cross-faction, never beast-looking. Returns 0 → skip quest.
-    if (isHungryChild)
-    {
-        uint32 childDisplayId = MechanicHungryChild::GetChildDisplayId(player);
-        if (childDisplayId == 0)
-        {
-            _phasePool.Release(phaseBit);
-            LOG_DEBUG("module.dynamicquests.hungry_child",
-                "HungryChild: no child model for race={}, skipping for player {}.",
-                static_cast<uint32>(player->getRace()), player->GetName());
-            return false;
-        }
-        desc.displayId = childDisplayId;
-        LOG_DEBUG("module.dynamicquests.hungry_child",
-            "HungryChild: using displayId={} for race={} player {}.",
-            childDisplayId, static_cast<uint32>(player->getRace()), player->GetName());
-    }
-
-    TempSummon* courier = nullptr;
-    if (isSuccubus)
-    {
-        // Succubus manages its own approach sequence via its phase state machine.
-        // Spawn at the player's position; TickRitual teleports it to the correct
-        // spot when its timer fires.
-        courier = DQSpawnSystem::SpawnStationary(player, player->GetPosition(), desc);
-    }
-    else if (isHungryChild)
-    {
-        // Spawn child ~15y ahead of the player (in their field of view).
-        // The child's AI (DQ_HungryChildAI) drives the walk toward the player —
-        // no MoveFollow is set by DQSpawnSystem, so InitializeAI owns the motion.
-        float spawnX = player->GetPositionX();
-        float spawnY = player->GetPositionY();
-        float spawnZ = player->GetPositionZ();
-        player->GetNearPoint(nullptr, spawnX, spawnY, spawnZ, 1.0f, 15.0f,
-            player->GetOrientation());
-        Position spawnPos(spawnX, spawnY, spawnZ,
-            player->GetOrientation() + static_cast<float>(M_PI));
-        courier = DQSpawnSystem::SpawnStationary(player, spawnPos, desc);
-    }
-    else if (IsArchetypeId(templateId))
-    {
-        // Archetype courier: spawn style is read from the current beat's spawn_style column.
-        uint32 archetypeId = DecodeArchetypeId(templateId);
-        auto   it          = ps.archetypeProgress.find(archetypeId);
-        uint8  beatNum     = (it != ps.archetypeProgress.end() && it->second != 0xFF)
-                                ? it->second : 1;
-        const ArchetypeBeat* beat  = sArchetypeMgr->GetBeat(archetypeId, beatNum);
-        const std::string&   style = beat ? beat->spawnStyle : "approaches";
-        courier = SpawnWithStyle(player, desc, style);
-    }
-    else
-    {
-        courier = DQSpawnSystem::SpawnCourier(player, desc);
-    }
+    // Spawn style is read from the current beat's spawn_style column.
+    uint32 archetypeId = DecodeArchetypeId(templateId);
+    auto   it          = ps.archetypeProgress.find(archetypeId);
+    uint8  beatNum     = (it != ps.archetypeProgress.end() && it->second != 0xFF)
+                            ? it->second : 1;
+    const ArchetypeBeat* beat  = sArchetypeMgr->GetBeat(archetypeId, beatNum);
+    const std::string&   style = beat ? beat->spawnStyle : "approaches";
+    TempSummon* courier = SpawnWithStyle(player, desc, style);
 
     if (!courier)
     {
@@ -1020,7 +768,10 @@ bool DynamicQuestMgr::SpawnCourier(Player* player, PlayerDQState& ps,
     ps.courierGuid      = courier->GetGUID();
     ps.activeTemplateId = templateId;
     ps.courierTimeoutMs = cfg_courierTimeoutMs;
-    ps.lastCourierTheme = tmplPtr ? tmplPtr->theme : "";
+    if (const ArchetypeDef* def = sArchetypeMgr->Get(DecodeArchetypeId(templateId)))
+        ps.lastCourierTheme = def->name;
+    else
+        ps.lastCourierTheme.clear();
 
     TransitionState(player, ps, DQ_STATE_INBOUND);
 
@@ -1151,32 +902,18 @@ void DynamicQuestMgr::ApplyLoginData(ObjectGuid playerGuid, QueryResult result)
                 ps.history.push_back(id);
         }
         ps.lastCourierTheme = f[10].Get<std::string>();
-        ps.lastEpisodeId    = f[11].Get<uint32>();
-        uint32 nextTime     = f[12].Get<uint32>();
-        ps.consecutiveTier1 = f[13].Get<uint8>();
-        ps.ileanaEpisode    = f[14].Get<uint8>();
-        ps.soulDebtUntil    = f[15].Get<uint32>();
+        uint32 nextTime     = f[11].Get<uint32>();
+        ps.consecutiveTier1 = f[12].Get<uint8>();
 
         uint32 now = static_cast<uint32>(GameTime::GetGameTime().count());
         if (nextTime > now)
             ps.cooldownRemainMs = (nextTime - now) * 1000;
         else
             ps.cooldownRemainMs = RollCooldown(1);
-
-        if (ps.soulDebtUntil > now)
-        {
-            int32 remainMs = static_cast<int32>((ps.soulDebtUntil - now) * 1000);
-            if (Aura* debt = player->AddAura(15007, player))
-                debt->SetDuration(remainMs);
-        }
-        else if (ps.soulDebtUntil != 0)
-        {
-            ps.soulDebtUntil = 0;
-        }
     }
 
-    LOG_DEBUG("module.dynamicquests", "Player {} DQ data applied. ileanaEp={} cooldown={}s",
-        player->GetName(), ps.ileanaEpisode, ps.cooldownRemainMs / 1000);
+    LOG_DEBUG("module.dynamicquests", "Player {} DQ data applied. cooldown={}s",
+        player->GetName(), ps.cooldownRemainMs / 1000);
 }
 
 void DynamicQuestMgr::ApplyArchetypeData(ObjectGuid playerGuid, QueryResult result)
@@ -1196,29 +933,6 @@ void DynamicQuestMgr::ApplyArchetypeData(ObjectGuid playerGuid, QueryResult resu
         } while (result->NextRow());
     }
 
-    // One-time migration: if ileana_episode > 0 and archetype_id=1 has no row yet,
-    // seed character_dq_sequences from the legacy counter.
-    // Only fires when the Ileana archetype (id=1) has been authored in dq_archetype.
-    // Safe to run repeatedly — INSERT IGNORE is a no-op if the row already exists.
-    if (ps.archetypeProgress.find(1) == ps.archetypeProgress.end() && ps.ileanaEpisode > 0)
-    {
-        bool   done = (ps.ileanaEpisode >= 3);
-        uint8  beat = done ? 1 : (ps.ileanaEpisode + 1); // ep1=beat2, ep2=beat3, ep3=done
-        uint32 now  = static_cast<uint32>(GameTime::GetGameTime().count());
-
-        CharacterDatabase.Execute(
-            "INSERT IGNORE INTO character_dq_sequences "
-            "(guid, archetype_id, current_beat, beat_count, completed, last_seen) "
-            "VALUES ({}, 1, {}, 0, {}, {})",
-            playerGuid.GetCounter(), beat, done ? 1 : 0, now);
-
-        ps.archetypeProgress[1] = done ? 0xFF : beat;
-
-        LOG_DEBUG("module.dynamicquests",
-            "Migrated ileana_episode={} → character_dq_sequences archetype_id=1 beat={}.",
-            ps.ileanaEpisode, beat);
-    }
-
     LOG_DEBUG("module.dynamicquests", "Archetype progress loaded: {} entries.",
         ps.archetypeProgress.size());
 }
@@ -1227,18 +941,6 @@ void DynamicQuestMgr::OnArchetypeBeatAdvanced(Player* player, uint32 archetypeId
 {
     PlayerDQState& ps = GetOrCreate(player->GetGUID());
     ps.archetypeProgress[archetypeId] = beatOrCompleted;
-}
-
-uint8 DynamicQuestMgr::GetIleanaEpisode(Player* player) const
-{
-    const PlayerDQState* ps = Get(player->GetGUID());
-    return ps ? ps->ileanaEpisode : 0;
-}
-
-void DynamicQuestMgr::SetSoulDebt(Player* player, uint32 expiryTimestamp)
-{
-    PlayerDQState& ps = GetOrCreate(player->GetGUID());
-    ps.soulDebtUntil = expiryTimestamp;
 }
 
 void DynamicQuestMgr::ReleasePhase(Player* player, PlayerDQState& ps)

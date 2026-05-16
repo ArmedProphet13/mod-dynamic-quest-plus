@@ -22,10 +22,13 @@
  */
 
 #include "ArchetypeMgr.h"
+#include "Bag.h"
 #include "CreatureScript.h"
+#include "DQDialogueMgr.h"
 #include "DQEmotionEngine.h"
 #include "DynamicQuestMgr.h"
 #include "GossipDef.h"
+#include "Item.h"
 #include "Log.h"
 #include "MotionMaster.h"
 #include "ObjectAccessor.h"
@@ -36,10 +39,37 @@
 #include "TemporarySummon.h"
 #include <cmath>
 
-static constexpr uint32 DQ_COURIER_SENDER   = 1203;
-static constexpr uint32 ACTION_ACCEPT       = 0;
-static constexpr uint32 ACTION_DECLINE      = 1;
-static constexpr uint32 GOSSIP_TEXT_COURIER = 9000003; // blank body — NPC already spoke via Say()
+// Searches main bag and equipped bags for the first item matching itemClass/itemSubclass.
+// itemSubclass == 0 matches any subclass. Returns nullptr if nothing found.
+static Item* FindItemByClassSubclass(Player* player, uint8 itemClass, uint8 itemSubclass)
+{
+    // Main backpack
+    for (uint8 i = INVENTORY_SLOT_ITEM_START; i < INVENTORY_SLOT_ITEM_END; ++i)
+    {
+        Item* item = player->GetItemByPos(NULL_BAG, i);
+        if (!item) continue;
+        ItemTemplate const* tmpl = item->GetTemplate();
+        if (tmpl->Class == itemClass && (itemSubclass == 0 || tmpl->SubClass == itemSubclass))
+            return item;
+    }
+    // Equipped bag slots
+    for (uint8 b = INVENTORY_SLOT_BAG_START; b < INVENTORY_SLOT_BAG_END; ++b)
+    {
+        Bag* bag = player->GetBagByPos(b);
+        if (!bag) continue;
+        for (uint32 j = 0; j < bag->GetBagSize(); ++j)
+        {
+            Item* item = bag->GetItemByPos(j);
+            if (!item) continue;
+            ItemTemplate const* tmpl = item->GetTemplate();
+            if (tmpl->Class == itemClass && (itemSubclass == 0 || tmpl->SubClass == itemSubclass))
+                return item;
+        }
+    }
+    return nullptr;
+}
+
+// DQ_COURIER_SENDER, GOSSIP_TEXT_COURIER, DQ_GOSSIP_DECLINE come from DQDialogueMgr.h
 static constexpr float  ARRIVE_DIST         = 3.0f;
 static constexpr uint32 WAIT_TIMEOUT_MS     = 120000;  // 2 min inactivity abort
 static constexpr uint32 REVEAL_DELAY_MS     = 900;     // invisible spawn → visible after this ms
@@ -147,70 +177,35 @@ public:
         if (_phase != DCP_ARRIVED)
             return;
 
-        // Stop idle loop; arm emote delay
         _idleLooping = false;
         _gossipDelay = GOSSIP_EMOTE_DELAY;
 
-        const char* acceptText = "I'll see to it.";
         uint32 templateId = sDQMgr->GetActiveTemplateId(player);
-        if (IsArchetypeId(templateId))
-        {
-            if (const InteractionInstance* inst = sDQMgr->GetActiveInst(player))
-            {
-                const ArchetypeBeat* beat = sArchetypeMgr->GetBeat(
-                    DecodeArchetypeId(templateId), inst->currentPhase);
-                if (beat && beat->mechanic == DQ_BEAT_WITNESS)
-                    acceptText = "I see.";
-            }
-        }
+        if (!IsArchetypeId(templateId))
+            return;
 
-        ClearGossipMenuFor(player);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, acceptText,       DQ_COURIER_SENDER, ACTION_ACCEPT);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Not right now.", DQ_COURIER_SENDER, ACTION_DECLINE);
-        SendGossipMenuFor(player, GOSSIP_TEXT_COURIER, me);
+        const InteractionInstance* inst = sDQMgr->GetActiveInst(player);
+        if (!inst)
+            return;
+
+        uint32 archetypeId = DecodeArchetypeId(templateId);
+        const ArchetypeDef*  def  = sArchetypeMgr->Get(archetypeId);
+        const ArchetypeBeat* beat = sArchetypeMgr->GetBeat(archetypeId, inst->currentPhase);
+        if (!def || !beat)
+            return;
+
+        sDQDialogue->OpenBeatGossip(player, me, *def, *beat);
     }
 
     bool HandleGossipSelect(Player* player, uint32 action)
     {
         CloseGossipMenuFor(player);
 
-        if (action == ACTION_ACCEPT)
-        {
-            _phase       = DCP_ACCEPTED;
-            _idleLooping = false;
-            _paceTimer   = 0;
-            me->GetMotionMaster()->Clear();
-            me->SetFacingToObject(player);
-
-            // on_accept emote
-            if (_emotionDef && !_emotionDef->onAccept.empty())
-            {
-                _sequencer.Play(_emotionDef->onAccept);
-            }
-
-            // text_on_accept say
-            uint32 templateId = sDQMgr->GetActiveTemplateId(player);
-            if (IsArchetypeId(templateId))
-            {
-                if (const InteractionInstance* inst = sDQMgr->GetActiveInst(player))
-                {
-                    const ArchetypeBeat* beat = sArchetypeMgr->GetBeat(
-                        DecodeArchetypeId(templateId), inst->currentPhase);
-                    if (beat && !beat->textOnAccept.empty())
-                        me->Say(beat->textOnAccept, LANG_UNIVERSAL);
-                }
-            }
-
-            sDQMgr->OnInteractionAccepted(player, templateId, 0);
-            return true;
-        }
-
-        if (action == ACTION_DECLINE)
+        if (action == DQ_GOSSIP_DECLINE)
         {
             _idleLooping = false;
             _paceTimer   = 0;
 
-            // Play category-matched decline emote sequence
             if (_emotionDef)
             {
                 const std::vector<DQEmoteStep>* seq = nullptr;
@@ -230,7 +225,44 @@ public:
             return true;
         }
 
-        return false;
+        // Accept path: action == 0 for all non-branching mechanics,
+        // or 0-3 as choice index for BRANCHING pattern beats.
+        _phase       = DCP_ACCEPTED;
+        _idleLooping = false;
+        _paceTimer   = 0;
+        me->GetMotionMaster()->Clear();
+        me->SetFacingToObject(player);
+
+        if (_emotionDef && !_emotionDef->onAccept.empty())
+            _sequencer.Play(_emotionDef->onAccept);
+
+        uint32 templateId = sDQMgr->GetActiveTemplateId(player);
+        if (IsArchetypeId(templateId))
+        {
+            if (const InteractionInstance* inst = sDQMgr->GetActiveInst(player))
+            {
+                const ArchetypeBeat* beat = sArchetypeMgr->GetBeat(
+                    DecodeArchetypeId(templateId), inst->currentPhase);
+                if (beat)
+                {
+                    if (!beat->textOnAccept.empty())
+                        me->Say(beat->textOnAccept, LANG_UNIVERSAL);
+
+                    // Consume one matching item when the COURIER mechanic requires it.
+                    if (beat->itemConsume && beat->itemPrereqClass != 0)
+                    {
+                        Item* donated = FindItemByClassSubclass(
+                            player, beat->itemPrereqClass, beat->itemPrereqSubclass);
+                        if (donated)
+                            player->DestroyItem(donated->GetBagSlot(), donated->GetSlot(), true);
+                    }
+                }
+            }
+        }
+
+        // Pass action through so BRANCHING mechanics receive the correct choice index.
+        sDQMgr->OnInteractionAccepted(player, templateId, action);
+        return true;
     }
 
     void JustDied(Unit* /*killer*/) override

@@ -7,7 +7,6 @@
 #define DQ_IMECHANIC_MODULE_H
 
 #include "Define.h"
-#include "InteractionTemplateLibrary.h"
 #include "ObjectGuid.h"
 #include <string>
 #include <vector>
@@ -41,6 +40,12 @@ struct InteractionInstance
     // Private phase bit assigned to this interaction's courier.
     // Non-zero: all mechanic-spawned creatures should be set to this phase.
     uint32 phaseBit = 0;
+
+    // Fight handler: HP% below which a hostile NPC concedes (from beat.fightThreshold).
+    uint8  concedePct = 15;
+
+    // Animation cleanup: persistent aura spell to remove before despawn (from beat.auraSpell).
+    uint32 auraSpell = 0;
 };
 
 class IMechanicModule

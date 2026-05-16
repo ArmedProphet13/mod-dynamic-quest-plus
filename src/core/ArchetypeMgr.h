@@ -38,6 +38,8 @@ enum DQBeatMechanic : uint8
     DQ_BEAT_GOTO     = 2, // player reaches a specific position
     DQ_BEAT_KILL     = 3, // a specific creature entry is killed
     DQ_BEAT_ACTIVATE = 4, // player uses/clicks a gameobject
+    DQ_BEAT_FIGHT    = 5, // NPC turns hostile; resolves at fight_threshold HP% (not death)
+    DQ_BEAT_CAST     = 6, // player uses an ability on the NPC (heal, buff, purge)
 };
 
 enum DQBeatTransition : uint8
@@ -77,6 +79,40 @@ struct ArchetypeBeat
     std::string      emotionEnd;           // explicit resolution; empty = use default resolution table
     std::string      textOnAccept;         // NPC says this when player accepts
     std::string      textOnComplete;       // NPC says this when beat completes
+
+    // Item prerequisite: show accept option only if player carries a matching item
+    uint8   itemPrereqClass    = 0;        // ITEM_CLASS_* (0 = no requirement)
+    uint8   itemPrereqSubclass = 0;        // 0 = any subclass
+    uint8   itemConsume        = 0;        // 1 = remove one matching item on accept
+
+    // Cost effects applied by MechanicArchetype on beat start (Ileana-style drains)
+    uint8   costGoldPercent    = 0;        // drain this % of player's gold (0 = none)
+    uint8   costHpPercent      = 0;        // set HP to this % of max HP (0 = none)
+
+    // System 8: mechanic dispatch
+    uint8   mechanicPassive    = 0;        // 0=active (button triggers), 1=passive (listens from beat start)
+
+    // System 9: choice-aware routing (0=default behaviour)
+    uint8   choiceSuccessTransition = 0;   // beat number to jump to on success (0=next in sequence)
+    uint8   choiceFailTransition    = 0;   // beat number to jump to on fail  (0=end arc)
+
+    // System 6: animation sequences
+    std::string entryAnimation  = "approaches"; // approaches|from_portal|fade_in|materialize
+    std::string exitAnimation   = "despawn";    // despawn|fade_out|portal_exit|dissolve
+
+    // System 6: dummy spell IDs (0=none)
+    uint32  entrySpell         = 0;        // spell cast on NPC at entry
+    uint32  exitSpell          = 0;        // spell cast on NPC at exit
+    uint32  auraSpell          = 0;        // persistent aura applied for beat duration
+
+    // System 8 Fight handler
+    uint8   fightThreshold     = 15;       // HP% at which hostile NPC concedes
+
+    // System 8 Cast handler
+    uint8   castSchool         = 0;        // spell school to detect (0=any, 2=Holy, 8=Nature…)
+
+    // System 4 NPC Builder
+    int8    npcLevelOffset     = 0;        // signed: player_level + offset = NPC level
 };
 
 // ---------------------------------------------------------------------------
@@ -116,6 +152,7 @@ public:
     bool IsLoaded() const { return _loaded; }
     size_t GetCount() const { return _archetypes.size(); }
 
+    const std::vector<ArchetypeDef>& GetAll() const { return _archetypes; }
     const ArchetypeDef*  Get(uint32 archetypeId) const;
     const ArchetypeBeat* GetBeat(uint32 archetypeId, uint8 beatNumber) const;
 

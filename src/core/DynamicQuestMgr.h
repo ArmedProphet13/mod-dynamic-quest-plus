@@ -124,15 +124,9 @@ struct PlayerDQState
     // Quest history: last N quest/template IDs
     std::deque<uint32> history; // front = most recent
     std::string lastCourierTheme;
-    uint32  lastEpisodeId       = 0;
 
     // Active mechanic instance
     InteractionInstance activeInst;
-
-    // Ileana encounter progress (0 = not started, 1 = ep1 done, 2 = ep2 done, 3 = all done)
-    uint8  ileanaEpisode  = 0;
-    // Unix timestamp after which the soul-debt aura (ep3) has expired; 0 = none
-    uint32 soulDebtUntil  = 0;
 
     // Internal: used for .dq status diagnostic output
     EligibilityResult lastGateResult = {};
@@ -228,10 +222,6 @@ public:
 
     // Called by DQ_CourierAI::JustDied — dispatches OnKill to the active mechanic.
     void OnCourierKilled(Player* player, Creature* courier);
-
-    // Ileana episode accessors (used by DQ_SuccubusAI).
-    uint8  GetIleanaEpisode(Player* player) const;
-    void   SetSoulDebt(Player* player, uint32 expiryTimestamp);
 
     // Called by DQ_DestinationAI / DQ_CourierAI on delivery attempt.
     void OnDestinationInteracted(Player* player, Creature* destNpc);

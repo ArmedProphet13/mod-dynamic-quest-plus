@@ -201,6 +201,22 @@ void MechanicArchetype::OnStart(Player* player, Creature* courier, InteractionIn
     if (!beat->textGreeting.empty())
         courier->Say(beat->textGreeting, LANG_UNIVERSAL);
 
+    // Apply beat cost effects (drain gold and/or reduce HP)
+    if (beat->costGoldPercent > 0)
+    {
+        uint32 total = player->GetMoney();
+        uint32 drain = static_cast<uint32>(total * beat->costGoldPercent / 100.0f);
+        if (drain > 0)
+            player->ModifyMoney(-static_cast<int64>(drain));
+    }
+    if (beat->costHpPercent > 0)
+    {
+        uint32 newHp = static_cast<uint32>(player->GetMaxHealth() * beat->costHpPercent / 100.0f);
+        newHp = std::max(1u, newHp);
+        if (newHp < player->GetHealth())
+            player->SetHealth(newHp);
+    }
+
     // Pre-set timer for timer-transition beats
     if (beat->transitionType == DQ_TRANS_TIMER)
         inst.phaseTimer = beat->transitionValue * 1000u;

@@ -37,7 +37,12 @@ void DQSpawnSystem::ApplyPhase(WorldObject* obj, uint32 phaseBit)
 void DQSpawnSystem::ApplyScaling(Creature* c, Player* player, const DQSpawnDesc& desc)
 {
     if (desc.scaleLevel)
-        c->SetLevel(static_cast<uint8>(player->GetLevel()), false);
+    {
+        int32 lvl = static_cast<int32>(player->GetLevel()) + static_cast<int32>(desc.levelOffset);
+        if (lvl < 1)  lvl = 1;
+        if (lvl > 80) lvl = 80;
+        c->SetLevel(static_cast<uint8>(lvl), false);
+    }
 
     if (desc.hpRatio > 0.0f)
     {

@@ -11,7 +11,6 @@
 #include "CommandScript.h"
 #include "DQContextResolver.h"
 #include "DynamicQuestMgr.h"
-#include "InteractionTemplateLibrary.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "RBAC.h"
@@ -103,24 +102,21 @@ public:
         return true;
     }
 
-    // .dq trigger tier1 [player]
+    // .dq trigger tier1 [player] — triggers the first eligible archetype (beat 1)
     static bool HandleDQTriggerTier1Command(ChatHandler* handler, Optional<PlayerIdentifier> targetArg)
     {
         Player* target = ResolveTarget(handler, targetArg);
         if (!target)
             return false;
 
-        for (const auto& tmpl : sInteractionLib->GetAll())
+        auto eligible = sArchetypeMgr->GetEligible(target->GetZoneId(), target->GetLevel(), {});
+        for (uint32 arcId : eligible)
         {
-            if (tmpl.tier == 1 && tmpl.levelMin <= target->GetLevel())
-            {
-                sDQMgr->ForceTriggger(target, tmpl.id);
-                handler->PSendSysMessage("DQ+ tier1 courier triggered (template={}) for {}.",
-                    tmpl.id, target->GetName());
-                return true;
-            }
+            sDQMgr->ForceTriggger(target, EncodeArchetypeId(arcId));
+            handler->PSendSysMessage("DQ+ archetype {} triggered for {}.", arcId, target->GetName());
+            return true;
         }
-        handler->SendErrorMessage("No tier 1 template found for level {}.", target->GetLevel());
+        handler->SendErrorMessage("No eligible archetype found for level {}.", target->GetLevel());
         return false;
     }
 
@@ -229,26 +225,22 @@ public:
         return true;
     }
 
-    // .dq episode list [zone_id]
+    // .dq episode list — lists all loaded archetypes
     static bool HandleDQEpisodeListCommand(ChatHandler* handler, Optional<uint32> /*zoneId*/)
     {
-        const auto& all = sInteractionLib->GetAll();
-        uint32 count = 0;
-        for (const auto& tmpl : all)
-        {
-            if (tmpl.tier != 2)
-                continue;
-            const char* mechName =
-                (tmpl.mechanicType == DQ_MECHANIC_SUCCUBUS)     ? "succubus" :
-                (tmpl.mechanicType == DQ_MECHANIC_HUNGRY_CHILD) ? "hungry_child" : "unknown";
-            handler->PSendSysMessage("  id={} name='{}' mechanic={} level={}-{}",
-                tmpl.id, tmpl.name, mechName, tmpl.levelMin, tmpl.levelMax);
-            ++count;
-        }
+        size_t count = sArchetypeMgr->GetCount();
         if (count == 0)
-            handler->SendSysMessage("No tier-2 (episode) templates loaded. Import interaction SQL and .dq reload.");
-        else
-            handler->PSendSysMessage("{} episode template(s) listed.", count);
+        {
+            handler->SendSysMessage("No archetypes loaded. Import archetype SQL and .dq reload.");
+            return true;
+        }
+        for (const ArchetypeDef& def : sArchetypeMgr->GetAll())
+        {
+            handler->PSendSysMessage("  id={} name='{}' beats={} level={}-{} enabled={}",
+                def.id, def.name, def.totalBeats, def.levelMin, def.levelMax,
+                def.enabled ? "yes" : "no");
+        }
+        handler->PSendSysMessage("{} archetype(s) listed.", count);
         return true;
     }
 
@@ -276,23 +268,22 @@ public:
         return true;
     }
 
-    // .dq episode spawn #id [player]
+    // .dq episode spawn #archetypeId [player]
     static bool HandleDQEpisodeSpawnCommand(ChatHandler* handler,
-        uint32 templateId, Optional<PlayerIdentifier> targetArg)
+        uint32 archetypeId, Optional<PlayerIdentifier> targetArg)
     {
         Player* target = ResolveTarget(handler, targetArg);
         if (!target)
             return false;
 
-        const InteractionTemplate* tmpl = sInteractionLib->GetById(templateId);
-        if (!tmpl || tmpl->tier != 2)
+        if (!sArchetypeMgr->Get(archetypeId))
         {
-            handler->PSendSysMessage("Template {} is not a tier-2 episode.", templateId);
+            handler->PSendSysMessage("Archetype {} not found.", archetypeId);
             return false;
         }
 
-        sDQMgr->ForceTriggger(target, templateId);
-        handler->PSendSysMessage("DQ+ episode {} spawned for {}.", templateId, target->GetName());
+        sDQMgr->ForceTriggger(target, EncodeArchetypeId(archetypeId));
+        handler->PSendSysMessage("DQ+ archetype {} spawned for {}.", archetypeId, target->GetName());
         return true;
     }
 

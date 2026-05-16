@@ -42,6 +42,7 @@ struct DQSpawnDesc
     uint32 faction      = 0;      // 0 = keep database default
     uint32 displayId    = 0;      // 0 = keep database default
     bool   scaleLevel   = false;  // true = match creature level to player level
+    int8   levelOffset  = 0;      // added to player level after scaleLevel (clamped 1–80)
     bool   attackPlayer = false;  // true = call AI()->AttackStart(player) after spawn
 };
 
