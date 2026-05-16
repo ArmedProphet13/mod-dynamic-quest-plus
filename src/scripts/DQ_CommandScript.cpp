@@ -9,6 +9,7 @@
 #include "ArchetypeMgr.h"
 #include "Chat.h"
 #include "CommandScript.h"
+#include "DQContextResolver.h"
 #include "DynamicQuestMgr.h"
 #include "InteractionTemplateLibrary.h"
 #include "ObjectAccessor.h"
@@ -73,6 +74,7 @@ public:
             { "trigger",   dqTriggerTable },
             { "stop",      HandleDQStopCommand,      rbac::RBAC_PERM_COMMAND_DEBUG, Console::No  },
             { "status",    HandleDQStatusCommand,    rbac::RBAC_PERM_COMMAND_DEBUG, Console::No  },
+            { "context",   HandleDQContextCommand,   rbac::RBAC_PERM_COMMAND_DEBUG, Console::No  },
             { "history",   dqHistoryTable },
             { "debug",     dqDebugTable },
             { "episode",   dqEpisodeTable },
@@ -157,6 +159,37 @@ public:
 
         sDQMgr->AbortInteraction(target);
         handler->PSendSysMessage("DQ+ interaction aborted for {}.", target->GetName());
+        return true;
+    }
+
+    // .dq context [player] — print resolved tag set and archetype PASS/FAIL
+    static bool HandleDQContextCommand(ChatHandler* handler, Optional<PlayerIdentifier> targetArg)
+    {
+        Player* target = ResolveTarget(handler, targetArg);
+        if (!target)
+            return false;
+
+        PlayerContext ctx;
+        ctx.zoneId     = target->GetZoneId();
+        ctx.areaId     = target->GetAreaId();
+        ctx.mapId      = target->GetMapId();
+        ctx.level      = target->GetLevel();
+        ctx.race       = target->getRace();
+        ctx.isOutdoors = target->IsOutdoors();
+        ctx.isInCombat = target->IsInCombat();
+        ctx.isSwimming = target->IsInWater();
+
+        DQTagSet tags = sDQContext->Resolve(target, ctx);
+        handler->SendSysMessage(sDQContext->DebugDump(tags).c_str());
+
+        auto eligible = sArchetypeMgr->GetEligible(ctx.zoneId, ctx.level, tags);
+        handler->PSendSysMessage("Archetypes eligible: {}/{}", eligible.size(), sArchetypeMgr->GetCount());
+        for (uint32 arcId : eligible)
+        {
+            const ArchetypeDef* def = sArchetypeMgr->Get(arcId);
+            if (def)
+                handler->PSendSysMessage("  PASS [{}] {}", def->id, def->name);
+        }
         return true;
     }
 

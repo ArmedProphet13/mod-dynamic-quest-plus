@@ -5,6 +5,7 @@
 
 #include "ArchetypeMgr.h"
 #include "DatabaseEnv.h"
+#include "DQContextResolver.h"
 #include "Field.h"
 #include "Log.h"
 #include "QueryResult.h"
@@ -21,7 +22,8 @@ void ArchetypeMgr::LoadFromDB()
     _idIndex.clear();
 
     QueryResult result = WorldDatabase.Query(
-        "SELECT id, name, pattern, total_beats, zone_id, level_min, level_max, enabled, appearance "
+        "SELECT id, name, pattern, total_beats, zone_id, level_min, level_max, enabled, appearance, "
+        "required_tags, excluded_tags "
         "FROM dq_archetype ORDER BY id");
 
     if (!result)
@@ -44,6 +46,27 @@ void ArchetypeMgr::LoadFromDB()
         def.levelMax   = f[6].Get<uint8>();
         def.enabled    = f[7].Get<uint8>() != 0;
         def.appearance = f[8].Get<std::string>();
+
+        // System 5: parse required_tags / excluded_tags CSV into vectors
+        auto parseCsv = [](const std::string& csv, std::vector<std::string>& out)
+        {
+            if (csv.empty()) return;
+            size_t start = 0, end;
+            while ((end = csv.find(',', start)) != std::string::npos)
+            {
+                std::string tok = csv.substr(start, end - start);
+                while (!tok.empty() && tok.front() == ' ') tok.erase(tok.begin());
+                while (!tok.empty() && tok.back()  == ' ') tok.pop_back();
+                if (!tok.empty()) out.push_back(std::move(tok));
+                start = end + 1;
+            }
+            std::string tok = csv.substr(start);
+            while (!tok.empty() && tok.front() == ' ') tok.erase(tok.begin());
+            while (!tok.empty() && tok.back()  == ' ') tok.pop_back();
+            if (!tok.empty()) out.push_back(std::move(tok));
+        };
+        parseCsv(f[9].Get<std::string>(),  def.requiredTags);
+        parseCsv(f[10].Get<std::string>(), def.excludedTags);
 
         size_t idx = _archetypes.size();
         _idIndex[def.id] = idx;
@@ -115,7 +138,7 @@ const ArchetypeBeat* ArchetypeMgr::GetBeat(uint32 archetypeId, uint8 beatNumber)
     return nullptr;
 }
 
-std::vector<uint32> ArchetypeMgr::GetEligible(uint32 zoneId, uint8 level) const
+std::vector<uint32> ArchetypeMgr::GetEligible(uint32 zoneId, uint8 level, const DQTagSet& tags) const
 {
     std::vector<uint32> eligible;
     for (const ArchetypeDef& def : _archetypes)
@@ -123,6 +146,7 @@ std::vector<uint32> ArchetypeMgr::GetEligible(uint32 zoneId, uint8 level) const
         if (!def.enabled) continue;
         if (def.levelMin > level || def.levelMax < level) continue;
         if (def.zoneId != 0 && def.zoneId != zoneId) continue;
+        if (!sDQContext->PassesFilter(tags, def.requiredTags, def.excludedTags)) continue;
         eligible.push_back(def.id);
     }
     return eligible;

@@ -14,6 +14,7 @@
 #include "QueryResult.h"
 #include "Position.h"
 #include "PlayerContextObserver.h"
+#include "DQContextResolver.h"
 #include "EligibilityEngine.h"
 #include "IMechanicModule.h"
 #include "NPCMatchingEngine.h"
@@ -135,6 +136,9 @@ struct PlayerDQState
 
     // Internal: used for .dq status diagnostic output
     EligibilityResult lastGateResult = {};
+
+    // Last resolved context tags — populated in TryTrigger, read by .dq context
+    DQTagSet lastResolvedTags;
 
     // Per-archetype progress cache (loaded async at login, updated on beat completion).
     // Key: archetype_id. Value: current_beat, or 0xFF when the archetype is completed.

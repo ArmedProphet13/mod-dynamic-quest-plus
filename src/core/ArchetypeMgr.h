@@ -15,6 +15,7 @@
 #define DQ_ARCHETYPE_MGR_H
 
 #include "Define.h"
+#include "DQContextResolver.h"
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -95,6 +96,10 @@ struct ArchetypeDef
     // System 2: Appearance — tag expression for NPC model selection ("humanoid,male,peasant")
     std::string appearance;
 
+    // System 5: Context filter — comma-separated tag strings; empty = no restriction
+    std::vector<std::string> requiredTags;
+    std::vector<std::string> excludedTags;
+
     std::vector<ArchetypeBeat> beats;
 };
 
@@ -114,8 +119,8 @@ public:
     const ArchetypeDef*  Get(uint32 archetypeId) const;
     const ArchetypeBeat* GetBeat(uint32 archetypeId, uint8 beatNumber) const;
 
-    // IDs of archetypes eligible for a player at zoneId/level (enabled, level range, zone).
-    std::vector<uint32> GetEligible(uint32 zoneId, uint8 level) const;
+    // IDs of archetypes eligible for a player at zoneId/level/tags (enabled, level range, zone, context).
+    std::vector<uint32> GetEligible(uint32 zoneId, uint8 level, const DQTagSet& tags) const;
 
 private:
     ArchetypeMgr() = default;

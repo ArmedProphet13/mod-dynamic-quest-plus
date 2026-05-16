@@ -102,6 +102,7 @@ void DynamicQuestMgr::Initialize()
 {
     LoadConfig();
     sDQEmotions->Initialize();
+    sDQContext->Initialize();
     sWorldCatalogue->LoadFromDB();
     sInteractionLib->LoadFromDB();
     sArchetypeMgr->LoadFromDB();
@@ -439,7 +440,16 @@ void DynamicQuestMgr::ForceTriggger(Player* player, uint32 templateId)
         }
 
         // Archetypes — prefer over regular templates when eligible in current zone
-        std::vector<uint32> archetypeIds = sArchetypeMgr->GetEligible(playerZone, playerLevel);
+        PlayerContext fctx;
+        fctx.zoneId     = playerZone;
+        fctx.areaId     = player->GetAreaId();
+        fctx.level      = playerLevel;
+        fctx.race       = player->getRace();
+        fctx.isOutdoors = player->IsOutdoors();
+        fctx.isInCombat = player->IsInCombat();
+        fctx.isSwimming = player->IsInWater();
+        DQTagSet forceTags = sDQContext->Resolve(player, fctx);
+        std::vector<uint32> archetypeIds = sArchetypeMgr->GetEligible(playerZone, playerLevel, forceTags);
         for (uint32 arcId : archetypeIds)
         {
             auto it = ps.archetypeProgress.find(arcId);
@@ -753,6 +763,9 @@ void DynamicQuestMgr::TryTrigger(Player* player, PlayerDQState& ps)
     if (!gate.eligible)
         return;
 
+    DQTagSet tags = sDQContext->Resolve(player, ps.ctx);
+    ps.lastResolvedTags = tags;
+
     const auto& all = sInteractionLib->GetAll();
     if (all.empty())
         return;
@@ -840,7 +853,7 @@ void DynamicQuestMgr::TryTrigger(Player* player, PlayerDQState& ps)
     // Completed archetypes are excluded via the cached archetypeProgress map.
     // Archetypes bypass the history check — progression is managed by character_dq_sequences.
     {
-        std::vector<uint32> archetypeIds = sArchetypeMgr->GetEligible(ps.ctx.zoneId, ps.ctx.level);
+        std::vector<uint32> archetypeIds = sArchetypeMgr->GetEligible(ps.ctx.zoneId, ps.ctx.level, tags);
         for (uint32 arcId : archetypeIds)
         {
             auto it = ps.archetypeProgress.find(arcId);
