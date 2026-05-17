@@ -144,6 +144,7 @@ class Player;
 class Creature;
 class GameObject;
 class TempSummon;
+class Spell;
 
 class DynamicQuestMgr
 {
@@ -229,6 +230,31 @@ public:
     // Called by DQ_PropScript when a player activates a prop GO.
     void OnPropActivated(Player* player, GameObject* go);
 
+    // --- Passive mechanic support (called from DQ_PassiveHooks) ---
+
+    // Register a live courier so passive hooks can reverse-lookup the player in O(1).
+    // Called from MechanicArchetype::OnStart after courier GUID is known.
+    void RegisterActiveCourier(ObjectGuid courier, ObjectGuid player);
+
+    // Remove the reverse-lookup entry.  Safe to call even if the courier was never registered.
+    // Called from MechanicArchetype::OnCleanup.
+    void UnregisterActiveCourier(ObjectGuid courier);
+
+    // Passive heal detected on a DQ courier.
+    void OnCourierHealed(ObjectGuid courierGuid, Player* healer, uint32 amount);
+
+    // Passive damage detected on a DQ courier; remainingHealthPct is already computed.
+    void OnCourierTookDamage(ObjectGuid courierGuid, uint32 remainingHealthPct);
+
+    // Passive spell cast by the player; hook checks whether target is their courier.
+    void OnPlayerCastOnCourier(Player* player, Spell* spell);
+
+    // Called when a fight NPC's HP drops below inst.concedePct.
+    void OnCourierConceded(Player* player);
+
+    // Returns the beat number the player is currently on (0 if no active interaction).
+    uint8 GetCurrentBeat(Player* player) const;
+
     // Config values (loaded once, refreshed by LoadConfig)
     uint32 cfg_tier1MinMs       = 1800000;
     uint32 cfg_tier1MaxMs       = 2700000;
@@ -271,6 +297,10 @@ private:
 
     // Per-player state map. Keyed by ObjectGuid raw value.
     std::unordered_map<uint64, PlayerDQState> _states;
+
+    // Reverse lookup for passive hooks: courier raw GUID -> player ObjectGuid.
+    // Updated by RegisterActiveCourier / UnregisterActiveCourier.
+    std::unordered_map<uint64, ObjectGuid> _courierToPlayer;
 
     // Mechanic module registry. Keyed by DQMechanicType.
     std::unordered_map<uint8, std::unique_ptr<IMechanicModule>> _mechanics;

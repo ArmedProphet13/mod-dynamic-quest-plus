@@ -158,7 +158,13 @@ void DQDialogueMgr::OpenBeatGossip(Player* player, Creature* npc,
         if (acceptText)
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, acceptText, DQ_COURIER_SENDER, 0);
     }
-    // mechanicPassive == 1: no accept button -- passive listener is already active.
+    else
+    {
+        // Passive mechanic (e.g. CAST/heal): "Understood." transitions to ON_QUEST so
+        // the passive hook can detect the cast.  Beat completes via DQ_PassiveHooks,
+        // not via a second button click.
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Understood.", DQ_COURIER_SENDER, 0);
+    }
 
     AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Not right now.", DQ_COURIER_SENDER, DQ_GOSSIP_DECLINE);
     SendGossipMenuFor(player, GOSSIP_TEXT_COURIER, npc);

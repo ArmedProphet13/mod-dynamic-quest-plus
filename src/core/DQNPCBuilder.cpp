@@ -121,7 +121,7 @@ void DQNPCBuilder::FlipToFriendly(Creature* npc)
 
     npc->CombatStop(true);
     npc->SetFaction(FACTION_FRIENDLY);
-    npc->AddUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
+    npc->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
 }
 
 // ---------------------------------------------------------------------------

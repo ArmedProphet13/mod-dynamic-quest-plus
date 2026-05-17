@@ -16,6 +16,7 @@
 class Player;
 class Creature;
 class GameObject;
+struct ArchetypeBeat;
 
 class MechanicArchetype : public IMechanicModule
 {
@@ -47,9 +48,21 @@ public:
     // GM command: force-advance to next beat regardless of progress.
     void ForceAdvance(Player* player, InteractionInstance& inst) override;
 
+    // Called by DynamicQuestMgr::OnCourierConceded when a fight NPC's HP drops
+    // below inst.concedePct.  Flips NPC back to friendly and completes the beat.
+    void OnFightConcede(Player* player, InteractionInstance& inst);
+
     const char* GetName() const override { return "MechanicArchetype"; }
 
 private:
+    // --- Phase 7: action router helpers ---
+    void BeginCourierObjective(Player* player, InteractionInstance& inst, const ArchetypeBeat* beat);
+    void BeginKillObjective   (Player* player, InteractionInstance& inst, const ArchetypeBeat* beat);
+    void BeginGotoObjective   (Player* player, InteractionInstance& inst, const ArchetypeBeat* beat);
+    void RegisterPassiveCast  (Player* player, InteractionInstance& inst, const ArchetypeBeat* beat);
+
+    // --- Phase 8: fight handler ---
+    void BeginFight(Player* player, InteractionInstance& inst, const ArchetypeBeat* beat);
     // Reads current_beat and beat_count from character_dq_sequences.
     // Returns defaults (beat=1, count=0, completed=false) if no row exists.
     static void LoadBeatState(uint32 guid, uint32 archetypeId,

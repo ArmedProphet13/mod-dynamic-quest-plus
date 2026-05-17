@@ -103,6 +103,7 @@ public:
     {
         me->SetReactState(REACT_PASSIVE);
         me->SetUInt32Value(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+        me->SetNpcFlag(UNIT_NPC_FLAG_GOSSIP); // ensure client sends CMSG_GOSSIP_HELLO, not CMSG_QUESTGIVER_HELLO
 
         Player* player = SummonerPlayer();
         if (!player)

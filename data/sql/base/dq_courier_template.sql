@@ -55,6 +55,11 @@ VALUES
 (900012, 0,  221,  1.0, 1.0),  -- Boy (child destination)
 (900013, 0, 3167,  1.0, 1.0);  -- Stormwind City Guard (guard destination)
 
+-- Force npcflag=1 (GOSSIP) and correct ScriptName in case INSERT IGNORE skipped these rows
+UPDATE `creature_template`
+SET `npcflag` = 1, `ScriptName` = 'DQ_CourierAI'
+WHERE `entry` IN (900001, 900002, 900003, 900004, 900005);
+
 -- Courier theme mappings
 INSERT INTO `dq_courier_template` (`entry`, `theme_tag`, `description`) VALUES
 (900001, 'demon',   'Demonic courier for dark/deal interactions'),

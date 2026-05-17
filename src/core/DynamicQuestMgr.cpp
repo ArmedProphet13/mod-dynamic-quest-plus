@@ -4,11 +4,14 @@
  */
 
 #include "DynamicQuestMgr.h"
+#include "DQDialogueMgr.h"
 #include "DQSpawnSystem.h"
 #include "WorldCatalogue.h"
 #include "MechanicArchetype.h"
 #include "ArchetypeMgr.h"
 #include "DQEmotionEngine.h"
+#include "SpellInfo.h"
+#include "Spell.h"
 #include "Chat.h"
 #include "Config.h"
 #include "Field.h"
@@ -70,6 +73,7 @@ void DynamicQuestMgr::Initialize()
     sDQContext->Initialize();
     sWorldCatalogue->LoadFromDB();
     sArchetypeMgr->LoadFromDB();
+    sDQDialogue->LoadFromDB();
     RegisterMechanics();
 
     LOG_INFO("module.dynamicquests",
@@ -762,14 +766,12 @@ bool DynamicQuestMgr::SpawnCourier(Player* player, PlayerDQState& ps,
         ps.activePhaseBit = 0;
     }
 
-    // Show ? marker — GetDialogStatus override in DQ_CourierScript returns the status.
-    courier->SetNpcFlag(UNIT_NPC_FLAG_QUESTGIVER);
-
     ps.courierGuid      = courier->GetGUID();
     ps.activeTemplateId = templateId;
     ps.courierTimeoutMs = cfg_courierTimeoutMs;
+    RegisterActiveCourier(courier->GetGUID(), player->GetGUID());
     if (const ArchetypeDef* def = sArchetypeMgr->Get(DecodeArchetypeId(templateId)))
-        ps.lastCourierTheme = def->name;
+        ps.lastCourierTheme = def->appearance;   // appearance is SQL-safe; name may contain apostrophes
     else
         ps.lastCourierTheme.clear();
 
@@ -937,6 +939,110 @@ void DynamicQuestMgr::ApplyArchetypeData(ObjectGuid playerGuid, QueryResult resu
         ps.archetypeProgress.size());
 }
 
+// ---------------------------------------------------------------------------
+// Passive mechanic support
+// ---------------------------------------------------------------------------
+
+void DynamicQuestMgr::RegisterActiveCourier(ObjectGuid courier, ObjectGuid player)
+{
+    _courierToPlayer[courier.GetRawValue()] = player;
+}
+
+void DynamicQuestMgr::UnregisterActiveCourier(ObjectGuid courier)
+{
+    _courierToPlayer.erase(courier.GetRawValue());
+}
+
+uint8 DynamicQuestMgr::GetCurrentBeat(Player* player) const
+{
+    const PlayerDQState* ps = Get(player->GetGUID());
+    return ps ? ps->activeInst.currentPhase : 0;
+}
+
+void DynamicQuestMgr::OnCourierHealed(ObjectGuid courierGuid, Player* healer, uint32 /*amount*/)
+{
+    auto it = _courierToPlayer.find(courierGuid.GetRawValue());
+    if (it == _courierToPlayer.end())
+        return;
+
+    if (it->second != healer->GetGUID())
+        return;
+
+    PlayerDQState* ps = &GetOrCreate(healer->GetGUID());
+    if (ps->state != DQ_STATE_ON_QUEST)
+        return;
+
+    uint32 archetypeId = DecodeArchetypeId(ps->activeTemplateId);
+    const ArchetypeBeat* beat = sArchetypeMgr->GetBeat(archetypeId, ps->activeInst.currentPhase);
+    if (!beat || beat->mechanic != DQ_BEAT_CAST)
+        return;
+
+    if (IMechanicModule* m = GetMechanic(ps->activeTemplateId))
+        m->OnComplete(healer, ps->activeInst);
+}
+
+void DynamicQuestMgr::OnCourierTookDamage(ObjectGuid courierGuid, uint32 remainingHealthPct)
+{
+    auto it = _courierToPlayer.find(courierGuid.GetRawValue());
+    if (it == _courierToPlayer.end())
+        return;
+
+    Player* player = ObjectAccessor::FindPlayer(it->second);
+    if (!player)
+        return;
+
+    PlayerDQState* ps = &GetOrCreate(it->second);
+    if (ps->state != DQ_STATE_ON_QUEST)
+        return;
+
+    uint32 archetypeId = DecodeArchetypeId(ps->activeTemplateId);
+    const ArchetypeBeat* beat = sArchetypeMgr->GetBeat(archetypeId, ps->activeInst.currentPhase);
+    if (!beat || beat->mechanic != DQ_BEAT_FIGHT)
+        return;
+
+    if (remainingHealthPct <= ps->activeInst.concedePct)
+        OnCourierConceded(player);
+}
+
+void DynamicQuestMgr::OnPlayerCastOnCourier(Player* player, Spell* spell)
+{
+    PlayerDQState* ps = &GetOrCreate(player->GetGUID());
+    if (ps->state != DQ_STATE_ON_QUEST)
+        return;
+
+    uint32 archetypeId = DecodeArchetypeId(ps->activeTemplateId);
+    const ArchetypeBeat* beat = sArchetypeMgr->GetBeat(archetypeId, ps->activeInst.currentPhase);
+    if (!beat || beat->mechanic != DQ_BEAT_CAST)
+        return;
+
+    // Check the spell's explicit unit target matches our courier.
+    Unit* target = spell->m_targets.GetUnitTarget();
+    if (!target || target->GetGUID() != ps->activeInst.courierGuid)
+        return;
+
+    // School check: castSchool == 0 means any school is accepted.
+    if (beat->castSchool != 0)
+    {
+        SpellInfo const* spellInfo = spell->GetSpellInfo();
+        if (!spellInfo || !(spellInfo->GetSchoolMask() & (1u << beat->castSchool)))
+            return;
+    }
+
+    if (IMechanicModule* m = GetMechanic(ps->activeTemplateId))
+        m->OnComplete(player, ps->activeInst);
+}
+
+void DynamicQuestMgr::OnCourierConceded(Player* player)
+{
+    PlayerDQState* ps = &GetOrCreate(player->GetGUID());
+    if (ps->state != DQ_STATE_ON_QUEST)
+        return;
+
+    IMechanicModule* m = GetMechanic(ps->activeTemplateId);
+    if (auto* arch = dynamic_cast<MechanicArchetype*>(m))
+        arch->OnFightConcede(player, ps->activeInst);
+}
+
 void DynamicQuestMgr::OnArchetypeBeatAdvanced(Player* player, uint32 archetypeId, uint8 beatOrCompleted)
 {
     PlayerDQState& ps = GetOrCreate(player->GetGUID());
@@ -945,6 +1051,10 @@ void DynamicQuestMgr::OnArchetypeBeatAdvanced(Player* player, uint32 archetypeId
 
 void DynamicQuestMgr::ReleasePhase(Player* player, PlayerDQState& ps)
 {
+    // Remove passive-hook reverse lookup entry before clearing courierGuid.
+    if (!ps.courierGuid.IsEmpty())
+        UnregisterActiveCourier(ps.courierGuid);
+
     if (!ps.activePhaseBit)
         return;
 
