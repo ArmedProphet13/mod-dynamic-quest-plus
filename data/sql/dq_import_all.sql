@@ -83,12 +83,10 @@ VALUES
 -- Item 33052 = Freshly Baked Bread (sold by innkeepers and food vendors).
 -- Emotes: CHEER(4) on give, SIT(1) on fetch-accept, CRY(22) on refuse.
 
--- Gossip window headers (DELETE + INSERT so text is always up to date)
-DELETE FROM `npc_text` WHERE `ID` IN (9000002, 9000003);
-INSERT INTO `npc_text` (`ID`, `text0_0`, `em0_0`) VALUES
-(9000002, 'A small child pulls at your sleeve, eyes wide with hunger. "Please... do you have any bread? The innkeeper sells it, but I have nothing left."', 0),
--- 9000003: generic archetype courier — body is intentionally blank; NPC already spoke via Say()
-(9000003, '', 0);
+-- Gossip window text for the Hungry Child interaction.
+DELETE FROM `npc_text` WHERE `ID` = 9000002;
+INSERT INTO `npc_text` (`ID`, `text0_0`, `Probability0`) VALUES
+(9000002, 'A small child pulls at your sleeve, eyes wide with hunger. "Please... do you have any bread? The innkeeper sells it, but I have nothing left."', 1.0);
 
 DELETE FROM `dq_interaction_template` WHERE `id` = 2;
 INSERT INTO `dq_interaction_template`

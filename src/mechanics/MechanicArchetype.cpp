@@ -193,8 +193,9 @@ void MechanicArchetype::OnStart(Player* player, Creature* courier, InteractionIn
 
     if (completed)
     {
-        LOG_DEBUG("module.dynamicquests",
-            "ArchetypeEngine: {} archetype={} already completed, aborting.",
+        LOG_WARN("module.dynamicquests",
+            "ArchetypeEngine: {} archetype={} already completed — aborting interaction. "
+            "Clear character_dq_sequences for this archetype to reset.",
             player->GetName(), archetypeId);
         sDQMgr->AbortInteraction(player);
         return;

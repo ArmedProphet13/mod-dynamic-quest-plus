@@ -70,7 +70,7 @@ static Item* FindItemByClassSubclass(Player* player, uint8 itemClass, uint8 item
     return nullptr;
 }
 
-// DQ_COURIER_SENDER, GOSSIP_TEXT_COURIER, DQ_GOSSIP_DECLINE come from DQDialogueMgr.h
+// DQ_COURIER_SENDER, DQ_GOSSIP_DECLINE come from DQDialogueMgr.h
 static constexpr float  ARRIVE_DIST         = 3.0f;
 static constexpr uint32 REVEAL_DELAY_MS     = 900;     // invisible spawn → visible after this ms
 static constexpr uint32 GOSSIP_EMOTE_DELAY  = 800;     // ms after gossip opens before emote fires
@@ -91,7 +91,6 @@ public:
     explicit DQ_CourierCreatureAI(Creature* c)
         : ScriptedAI(c)
         , _phase(DCP_APPROACHING)
-        , _lastMenuId(0)
         , _revealTimer(0)
         , _idleLooping(false)
         , _gossipDelay(0)
@@ -173,19 +172,14 @@ public:
         }
     }
 
-    // Fires before OnGossipSelect — captures the menuId the client echoed back.
-    void sGossipSelect(Player* /*player*/, uint32 menuId, uint32 /*gossipListId*/) override
-    {
-        _lastMenuId = menuId;
-    }
-
     void HandleGossipHello(Player* player)
     {
-        DQ_LOG_DEBUG(DQ_LOG_CAT_SESSION, player, "GossipHello: phase={}", static_cast<int>(_phase));
+        DQ_LOG_INFO(DQ_LOG_CAT_SESSION, player, "GossipHello: phase={}", static_cast<int>(_phase));
 
         if (_phase != DCP_ARRIVED)
         {
-            DQ_LOG_DEBUG(DQ_LOG_CAT_SESSION, player, "GossipHello: SKIP — not DCP_ARRIVED");
+            DQ_LOG_INFO(DQ_LOG_CAT_SESSION, player, "GossipHello: SKIP — not DCP_ARRIVED");
+            CloseGossipMenuFor(player);
             return;
         }
 
@@ -193,34 +187,39 @@ public:
         _gossipDelay = GOSSIP_EMOTE_DELAY;
 
         uint32 templateId = sDQMgr->GetActiveTemplateId(player);
-        DQ_LOG_DEBUG(DQ_LOG_CAT_SESSION, player, "GossipHello: templateId={} isArchetype={}", templateId, IsArchetypeId(templateId));
+        DQ_LOG_INFO(DQ_LOG_CAT_SESSION, player, "GossipHello: templateId={} isArchetype={}", templateId, IsArchetypeId(templateId));
 
         if (!IsArchetypeId(templateId))
         {
-            DQ_LOG_DEBUG(DQ_LOG_CAT_SESSION, player, "GossipHello: SKIP — templateId not an archetype");
+            DQ_LOG_INFO(DQ_LOG_CAT_SESSION, player, "GossipHello: SKIP — templateId not an archetype");
+            CloseGossipMenuFor(player);
             return;
         }
 
         const InteractionInstance* inst = sDQMgr->GetActiveInst(player);
-        DQ_LOG_DEBUG(DQ_LOG_CAT_SESSION, player, "GossipHello: inst={} phase={}", inst ? "valid" : "null",
+        DQ_LOG_INFO(DQ_LOG_CAT_SESSION, player, "GossipHello: inst={} phase={}", inst ? "valid" : "null",
             inst ? static_cast<int>(inst->currentPhase) : -1);
 
         if (!inst)
+        {
+            CloseGossipMenuFor(player);
             return;
+        }
 
         uint32 archetypeId = DecodeArchetypeId(templateId);
         const ArchetypeDef*  def  = sArchetypeMgr->Get(archetypeId);
         const ArchetypeBeat* beat = sArchetypeMgr->GetBeat(archetypeId, inst->currentPhase);
-        DQ_LOG_DEBUG(DQ_LOG_CAT_SESSION, player, "GossipHello: archetypeId={} def={} beat={}",
+        DQ_LOG_INFO(DQ_LOG_CAT_SESSION, player, "GossipHello: archetypeId={} def={} beat={}",
             archetypeId, def ? "valid" : "null", beat ? "valid" : "null");
 
         if (!def || !beat)
         {
-            DQ_LOG_DEBUG(DQ_LOG_CAT_SESSION, player, "GossipHello: SKIP — def or beat not found");
+            DQ_LOG_INFO(DQ_LOG_CAT_SESSION, player, "GossipHello: SKIP — def or beat not found");
+            CloseGossipMenuFor(player);
             return;
         }
 
-        DQ_LOG_DEBUG(DQ_LOG_CAT_SESSION, player, "GossipHello: opening session");
+        DQ_LOG_INFO(DQ_LOG_CAT_SESSION, player, "GossipHello: opening session");
         DQClientSession::Open(player, me, *def, *beat,
             sDQMgr->PendingSession(player), sDQMgr->cfg_courierTimeoutMs);
     }
@@ -229,7 +228,7 @@ public:
     {
         // Validate the response against the session we opened.
         DQPendingSession& sess = sDQMgr->PendingSession(player);
-        if (!DQClientSession::Validate(player, creature, _lastMenuId, sess))
+        if (!DQClientSession::Validate(player, creature, sess))
             return false;
         DQClientSession::Close(sess);
 
@@ -310,7 +309,6 @@ public:
 
 private:
     DCPhase             _phase;
-    uint32              _lastMenuId;  // menuId echoed by client in sGossipSelect
     uint32              _revealTimer;
     DQEmoteSequencer    _sequencer;
     bool                _idleLooping;
@@ -330,6 +328,27 @@ private:
 
         // OnCourierArrived → MechanicArchetype::OnStart: caches inst state, greeting.
         sDQMgr->OnCourierArrived(player, me);
+
+        // Proactive push: open the gossip window without requiring right-click.
+        {
+            uint32 templateId = sDQMgr->GetActiveTemplateId(player);
+            if (IsArchetypeId(templateId))
+            {
+                if (const InteractionInstance* inst = sDQMgr->GetActiveInst(player))
+                {
+                    uint32 archetypeId = DecodeArchetypeId(templateId);
+                    const ArchetypeDef*  def  = sArchetypeMgr->Get(archetypeId);
+                    const ArchetypeBeat* beat = sArchetypeMgr->GetBeat(archetypeId, inst->currentPhase);
+                    if (def && beat)
+                    {
+                        _idleLooping = false;
+                        _gossipDelay = GOSSIP_EMOTE_DELAY;
+                        DQClientSession::Open(player, me, *def, *beat,
+                            sDQMgr->PendingSession(player), sDQMgr->cfg_courierTimeoutMs);
+                    }
+                }
+            }
+        }
 
         // Start arrive emote sequence; arm idle loop for when it finishes
         if (_emotionDef && !_emotionDef->onArrive.empty())
@@ -416,6 +435,7 @@ public:
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {
+        DQ_LOG_INFO(DQ_LOG_CAT_SESSION, player, "Script::OnGossipHello entry={}", creature->GetEntry());
         if (DQ_CourierCreatureAI* ai = CAST_AI(DQ_CourierCreatureAI, creature->AI()))
             ai->HandleGossipHello(player);
         return true;

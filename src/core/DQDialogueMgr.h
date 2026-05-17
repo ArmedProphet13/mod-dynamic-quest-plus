@@ -31,11 +31,9 @@ class Creature;
 class Player;
 
 // Gossip sender used for all DQ+ menu items.
-static constexpr uint32 DQ_COURIER_SENDER   = 1203;
-// NPC text with blank body -- NPC already spoke via Say() on arrive.
-static constexpr uint32 GOSSIP_TEXT_COURIER = 9000003;
+static constexpr uint32 DQ_COURIER_SENDER = 1203;
 // Walk-away action (0xFE avoids collision with branching choice indices 0-3).
-static constexpr uint32 DQ_GOSSIP_DECLINE   = 0xFE;
+static constexpr uint32 DQ_GOSSIP_DECLINE = 0xFE;
 
 class DQDialogueMgr
 {
