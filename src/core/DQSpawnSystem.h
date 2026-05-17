@@ -21,6 +21,7 @@
 #include "Define.h"
 #include "ObjectGuid.h"
 #include "Position.h"
+#include <string>
 #include <vector>
 
 class Creature;
@@ -28,6 +29,16 @@ class GameObject;
 class Player;
 class TempSummon;
 class WorldObject;
+
+// ---------------------------------------------------------------------------
+// CourierSelection — resolved courier entry + optional display override.
+// Promoted from NPCMatchingEngine (v7 stub deleted).
+// ---------------------------------------------------------------------------
+struct CourierSelection
+{
+    uint32 entry     = 0;  // dedicated AI entry (900001-900005)
+    uint32 displayId = 0;  // world NPC display override (0 = keep default model)
+};
 
 // ---------------------------------------------------------------------------
 // DQSpawnDesc — describes what to spawn and how to configure it.
@@ -77,6 +88,13 @@ public:
     // summoner may be a Player or a Creature (WorldObject suffices).
     static GameObject* SpawnGameObject(WorldObject* summoner, uint32 entry,
         const Position& pos, uint32 phaseBit = 0, uint32 durationMs = 300000);
+
+    // Spawn-style router: interprets the beat's spawn_style string and delegates
+    // to the appropriate primitive.  If outAuxGuids is non-null, any extra spawns
+    // (e.g. portal GOs) have their GUIDs appended so callers can track cleanup.
+    static TempSummon* SpawnWithStyle(Player* player, const DQSpawnDesc& desc,
+        const std::string& style,
+        std::vector<ObjectGuid>* outAuxGuids = nullptr);
 
 private:
     // VMAP-aware position at worldAngle radians from the player, dist away,

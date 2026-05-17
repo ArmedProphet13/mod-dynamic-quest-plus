@@ -244,6 +244,15 @@ Responsibilities:
 
 ## What Currently Exists
 
+### Infrastructure
+
+| System           | Status                                                       |
+|------------------|--------------------------------------------------------------|
+| DQLog            | Complete — category-aware macros over AC logger hierarchy    |
+| DQClientSession  | Complete — owns all gossip send/receive/validate/expire      |
+
+### Narrative Systems
+
 | System            | Status                                       |
 |-------------------|----------------------------------------------|
 | Trigger & Context | Exists, solid                                |
@@ -255,6 +264,26 @@ Responsibilities:
 | Dialogue          | Exists but hardcoded — needs full rewrite    |
 | Action & Mechanic | Scattered — needs extraction into handlers   |
 | Resolution        | Partial — scattered across multiple files    |
+
+---
+
+## What Was Added in v8 (2026-05-17)
+
+**DQLog** (`src/core/DQLog.h`) — header-only structured logging layer.
+All module logging now goes through `DQ_LOG_DEBUG/INFO/WARN/ERROR(cat, player, fmt, ...)`.
+`.dq debug on/off` wires to `sLog->SetLogLevel("module.dynamicquests", ...)` and propagates
+to all six subcategories automatically. `cfg_verbose` removed.
+
+**DQClientSession** (`src/core/DQClientSession.h/.cpp`) — centralised gossip communication.
+Owns Open (build menu + stamp non-zero menuId + send), Validate (menuId + GUID check),
+Tick (expiry countdown in DynamicQuestMgr::OnPlayerUpdate), and Close.
+`DQPendingSession` struct lives in `PlayerDQState`; `menuId == 0` is the no-session sentinel.
+
+**API changes:**
+- `DQDialogueMgr::OpenBeatGossip(Player*, Creature*, ...)` → `BuildBeatMenu(Player*, ...)`
+  Removed `Creature*` parameter and `SendGossipMenuFor` call — sending is `DQClientSession::Open`'s job.
+- `DQ_CourierCreatureAI::_waitTimer` removed — gossip session expiry is now owned by
+  `DQClientSession::Tick` called from `DynamicQuestMgr::OnPlayerUpdate`.
 
 ---
 

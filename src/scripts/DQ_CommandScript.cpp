@@ -11,6 +11,7 @@
 #include "CommandScript.h"
 #include "DQContextResolver.h"
 #include "DynamicQuestMgr.h"
+#include "Log.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "RBAC.h"
@@ -29,8 +30,8 @@ public:
         // .dq debug on/off/gate
         static ChatCommandTable dqDebugTable =
         {
-            { "on",   HandleDQDebugOnCommand,   rbac::RBAC_PERM_COMMAND_DEBUG, Console::No  },
-            { "off",  HandleDQDebugOffCommand,  rbac::RBAC_PERM_COMMAND_DEBUG, Console::No  },
+            { "on",   HandleDQDebugOnCommand,   rbac::RBAC_PERM_COMMAND_DEBUG, Console::Yes },
+            { "off",  HandleDQDebugOffCommand,  rbac::RBAC_PERM_COMMAND_DEBUG, Console::Yes },
             { "gate", HandleDQDebugGateCommand, rbac::RBAC_PERM_COMMAND_DEBUG, Console::No  },
         };
 
@@ -287,27 +288,19 @@ public:
         return true;
     }
 
-    // .dq debug on [player]
-    static bool HandleDQDebugOnCommand(ChatHandler* handler, Optional<PlayerIdentifier> targetArg)
+    // .dq debug on — enable DEBUG level for module.dynamicquests and all subcategories
+    static bool HandleDQDebugOnCommand(ChatHandler* handler)
     {
-        Player* target = ResolveTarget(handler, targetArg);
-        if (!target)
-            return false;
-
-        sDQMgr->SetDebugMode(target, true);
-        handler->PSendSysMessage("DQ+ debug mode ON for {}.", target->GetName());
+        sLog->SetLogLevel("module.dynamicquests", static_cast<int32>(LOG_LEVEL_DEBUG), true);
+        handler->SendSysMessage("DQ+ debug logging ON (module.dynamicquests -> DEBUG).");
         return true;
     }
 
-    // .dq debug off [player]
-    static bool HandleDQDebugOffCommand(ChatHandler* handler, Optional<PlayerIdentifier> targetArg)
+    // .dq debug off — restore INFO level for module.dynamicquests and all subcategories
+    static bool HandleDQDebugOffCommand(ChatHandler* handler)
     {
-        Player* target = ResolveTarget(handler, targetArg);
-        if (!target)
-            return false;
-
-        sDQMgr->SetDebugMode(target, false);
-        handler->PSendSysMessage("DQ+ debug mode OFF for {}.", target->GetName());
+        sLog->SetLogLevel("module.dynamicquests", static_cast<int32>(LOG_LEVEL_INFO), true);
+        handler->SendSysMessage("DQ+ debug logging OFF (module.dynamicquests -> INFO).");
         return true;
     }
 

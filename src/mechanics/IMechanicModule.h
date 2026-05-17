@@ -86,6 +86,9 @@ public:
     // Called by .dq episode skip — GM command to force-advance to next phase.
     virtual void ForceAdvance(Player* /*player*/, InteractionInstance& /*inst*/) {}
 
+    // Called when a hostile courier's HP drops below inst.concedePct (fight mechanic).
+    virtual void OnFightConcede(Player* /*player*/, InteractionInstance& /*inst*/) {}
+
     virtual const char* GetName() const = 0;
 };
 

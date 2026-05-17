@@ -11,6 +11,7 @@
 #include "Map.h"
 #include "MotionMaster.h"
 #include "Player.h"
+#include "Position.h"
 #include "TemporarySummon.h"
 #include "Unit.h"
 #include <cmath>
@@ -197,4 +198,57 @@ GameObject* DQSpawnSystem::SpawnGameObject(WorldObject* summoner, uint32 entry,
         go->SetPhaseMask(phaseBit, true);
 
     return go;
+}
+
+TempSummon* DQSpawnSystem::SpawnWithStyle(Player* player, const DQSpawnDesc& desc,
+    const std::string& style, std::vector<ObjectGuid>* outAuxGuids)
+{
+    if (style.empty() || style == "approaches")
+        return SpawnCourier(player, desc, 22.0f);
+
+    if (style == "distant")
+        return SpawnCourier(player, desc, 55.0f);
+
+    if (style == "run_up")
+    {
+        TempSummon* c = SpawnCourier(player, desc, 40.0f);
+        if (c)
+            c->SetSpeed(MOVE_RUN, c->GetSpeed(MOVE_RUN) * 1.8f);
+        return c;
+    }
+
+    if (style == "roadside")
+    {
+        float fwd = player->GetOrientation();
+        float lat = fwd - float(M_PI) * 0.5f;
+        float px  = player->GetPositionX() + 25.0f * std::cos(fwd) + 12.0f * std::cos(lat);
+        float py  = player->GetPositionY() + 25.0f * std::sin(fwd) + 12.0f * std::sin(lat);
+        Position pos(px, py, player->GetPositionZ(), fwd + float(M_PI));
+        return SpawnStationary(player, pos, desc);
+    }
+
+    if (style == "waiting" || style == "collapses")
+        return SpawnCourier(player, desc, 2.0f);
+
+    if (style == "from_portal")
+    {
+        constexpr uint32 PORTAL_GO_ENTRY = 36727;
+        constexpr uint32 PORTAL_DURATION = 8; // seconds — SummonGameObject respawnDelay is in seconds
+        float ang = player->GetOrientation();
+        float px  = player->GetPositionX() + 6.0f * std::cos(ang);
+        float py  = player->GetPositionY() + 6.0f * std::sin(ang);
+        Position portalPos(px, py, player->GetPositionZ(), 0.0f);
+        GameObject* portal = SpawnGameObject(player, PORTAL_GO_ENTRY, portalPos,
+            desc.phaseBit, PORTAL_DURATION);
+        if (portal && outAuxGuids)
+            outAuxGuids->push_back(portal->GetGUID());
+        return SpawnCourier(player, desc, 6.0f);
+    }
+
+    if (style == "from_shadow")
+        return SpawnCourier(player, desc, 8.0f);
+
+    LOG_WARN("module.dynamicquests",
+        "DQSpawnSystem::SpawnWithStyle: unknown style '{}' — falling back to 'approaches'.", style);
+    return SpawnCourier(player, desc, 22.0f);
 }

@@ -50,7 +50,7 @@ public:
 
     // Called by DynamicQuestMgr::OnCourierConceded when a fight NPC's HP drops
     // below inst.concedePct.  Flips NPC back to friendly and completes the beat.
-    void OnFightConcede(Player* player, InteractionInstance& inst);
+    void OnFightConcede(Player* player, InteractionInstance& inst) override;
 
     const char* GetName() const override { return "MechanicArchetype"; }
 

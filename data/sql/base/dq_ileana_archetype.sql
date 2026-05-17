@@ -33,7 +33,11 @@ INSERT INTO `dq_archetype_beat`
      `emotion`, `emotion_end`,
      `text_on_accept`, `text_on_complete`,
      `item_prereq_class`, `item_prereq_subclass`, `item_consume`,
-     `cost_gold_percent`, `cost_hp_percent`)
+     `cost_gold_percent`, `cost_hp_percent`,
+     `mechanic_passive`, `choice_success_transition`, `choice_fail_transition`,
+     `entry_animation`, `exit_animation`,
+     `entry_spell`, `exit_spell`, `aura_spell`,
+     `fight_threshold`, `cast_school`, `npc_level_offset`)
 VALUES
     -- Beat 1: First encounter — Ileana introduces herself
     (4, 1, 2575, 0, 'witness',
@@ -47,7 +51,11 @@ VALUES
      'I''m listening.',
      '',
      0, 0, 0,
-     0, 0),
+     0, 0,
+     0, 0, 0,
+     'from_portal', 'despawn',
+     0, 0, 0,
+     15, 0, 0),
 
     -- Beat 2: She makes the proposition explicit
     (4, 2, 2575, 0, 'witness',
@@ -61,7 +69,11 @@ VALUES
      'What is the price?',
      '',
      0, 0, 0,
-     0, 0),
+     0, 0,
+     0, 0, 0,
+     'from_portal', 'despawn',
+     0, 0, 0,
+     15, 0, 0),
 
     -- Beat 3: The binding — player pays gold + HP, receives a boon
     (4, 3, 2575, 0, 'witness',
@@ -75,7 +87,11 @@ VALUES
      'So be it.',
      'She smiles. The deal is struck.',
      0, 0, 0,
-     70, 20),
+     70, 20,
+     0, 0, 0,
+     'from_portal', 'despawn',
+     0, 0, 0,
+     15, 0, 0),
 
 -- ── Episode 2: The Debt ───────────────────────────────────────────────────────
 
@@ -91,7 +107,11 @@ VALUES
      'What do you want now?',
      '',
      0, 0, 0,
-     0, 0),
+     0, 0,
+     0, 0, 0,
+     'from_portal', 'despawn',
+     0, 0, 0,
+     15, 0, 0),
 
     -- Beat 5: She reveals the escalating cost
     (4, 5, 2575, 0, 'witness',
@@ -105,7 +125,11 @@ VALUES
      'Name your price.',
      '',
      0, 0, 0,
-     0, 0),
+     0, 0,
+     0, 0, 0,
+     'from_portal', 'despawn',
+     0, 0, 0,
+     15, 0, 0),
 
     -- Beat 6: Second binding — steeper cost
     (4, 6, 2575, 0, 'witness',
@@ -119,7 +143,11 @@ VALUES
      'Take it.',
      'The world dims for a moment. Then clarity returns, cold and sharp.',
      0, 0, 0,
-     50, 40),
+     50, 40,
+     0, 0, 0,
+     'from_portal', 'despawn',
+     0, 0, 0,
+     15, 0, 0),
 
 -- ── Episode 3: The Reckoning ─────────────────────────────────────────────────
 
@@ -135,7 +163,11 @@ VALUES
      'Say what you came to say.',
      '',
      0, 0, 0,
-     0, 0),
+     0, 0,
+     0, 0, 0,
+     'from_portal', 'despawn',
+     0, 0, 0,
+     15, 0, 0),
 
     -- Beat 8: She lays out the final terms
     (4, 8, 2575, 0, 'witness',
@@ -149,7 +181,11 @@ VALUES
      'And if I refuse?',
      '',
      0, 0, 0,
-     0, 0),
+     0, 0,
+     0, 0, 0,
+     'from_portal', 'despawn',
+     0, 0, 0,
+     15, 0, 0),
 
     -- Beat 9: The final binding — nearly everything is taken
     (4, 9, 2575, 0, 'witness',
@@ -163,4 +199,8 @@ VALUES
      'Then take it. We''re done.',
      'She vanishes. The air smells of ash and old copper.',
      0, 0, 0,
-     80, 60);
+     80, 60,
+     0, 0, 0,
+     'from_portal', 'despawn',
+     0, 0, 0,
+     15, 0, 0);

@@ -8,7 +8,7 @@
 #include "DatabaseEnv.h"
 #include "Field.h"
 #include "GossipDef.h"
-#include "Log.h"
+#include "DQLog.h"
 #include "MechanicUtils.h"
 #include "Player.h"
 #include "QueryResult.h"
@@ -37,7 +37,7 @@ void DQDialogueMgr::LoadFromDB()
 
     if (!result)
     {
-        LOG_WARN("module.dynamicquests", "DQDialogueMgr: dq_text_variant_pool is empty.");
+        DQ_LOG_WARN(DQ_LOG_CAT_STATE, nullptr, "DQDialogueMgr: dq_text_variant_pool is empty.");
         _loaded = true;
         return;
     }
@@ -54,7 +54,7 @@ void DQDialogueMgr::LoadFromDB()
     } while (result->NextRow());
 
     _loaded = true;
-    LOG_INFO("module.dynamicquests", "DQDialogueMgr: Loaded {} text variants in {} ms.",
+    DQ_LOG_INFO(DQ_LOG_CAT_STATE, nullptr, "DQDialogueMgr: Loaded {} text variants in {} ms.",
         _variants.size(), GetMSTimeDiffToNow(oldMSTime));
 }
 
@@ -95,12 +95,16 @@ std::string DQDialogueMgr::GetVariantText(const std::string& emotion,
 }
 
 // ---------------------------------------------------------------------------
-// OpenBeatGossip
+// BuildBeatMenu
 // ---------------------------------------------------------------------------
 
-void DQDialogueMgr::OpenBeatGossip(Player* player, Creature* npc,
-                                     const ArchetypeDef& def, const ArchetypeBeat& beat)
+void DQDialogueMgr::BuildBeatMenu(Player* player,
+                                   const ArchetypeDef& def, const ArchetypeBeat& beat)
 {
+    DQ_LOG_DEBUG(DQ_LOG_CAT_SESSION, player, "BuildBeatMenu: archetype={} beat={} mechanic={} passive={}",
+        def.id, beat.beatNumber,
+        static_cast<int>(beat.mechanic), static_cast<int>(beat.mechanicPassive));
+
     ClearGossipMenuFor(player);
 
     if (def.pattern == DQ_PATTERN_BRANCHING)
@@ -167,5 +171,4 @@ void DQDialogueMgr::OpenBeatGossip(Player* player, Creature* npc,
     }
 
     AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Not right now.", DQ_COURIER_SENDER, DQ_GOSSIP_DECLINE);
-    SendGossipMenuFor(player, GOSSIP_TEXT_COURIER, npc);
 }

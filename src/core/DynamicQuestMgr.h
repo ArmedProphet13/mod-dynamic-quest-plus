@@ -14,10 +14,10 @@
 #include "QueryResult.h"
 #include "Position.h"
 #include "PlayerContextObserver.h"
+#include "DQClientSession.h"
 #include "DQContextResolver.h"
 #include "EligibilityEngine.h"
 #include "IMechanicModule.h"
-#include "NPCMatchingEngine.h"
 #include "DQSpawnSystem.h"
 #include <atomic>
 #include <cstdint>
@@ -128,6 +128,10 @@ struct PlayerDQState
     // Active mechanic instance
     InteractionInstance activeInst;
 
+    // Active gossip session — tracks the menu we sent so we can validate the response.
+    // menuId == 0 means no session open.
+    DQPendingSession pendingSession;
+
     // Internal: used for .dq status diagnostic output
     EligibilityResult lastGateResult = {};
 
@@ -215,6 +219,10 @@ public:
     // Returns the active template ID for a player (0 if none).
     uint32 GetActiveTemplateId(Player* player) const;
 
+    // Returns the player's DQPendingSession for DQClientSession::Open/Validate/Close.
+    // Creates the PlayerDQState entry if absent.
+    DQPendingSession& PendingSession(Player* player);
+
     // Returns a const pointer to the player's active InteractionInstance (nullptr if none).
     const InteractionInstance* GetActiveInst(Player* player) const;
 
@@ -266,7 +274,6 @@ public:
     float  cfg_courierSpeedBonus = 1.25f;
     uint32 cfg_courierTimeoutMs  = 45000;
     bool   cfg_enabled          = true;
-    bool   cfg_verbose          = false;
 
 private:
     DynamicQuestMgr() = default;
@@ -279,9 +286,8 @@ private:
     void TickOnQuest(Player* player, PlayerDQState& ps, uint32 diff);
     void TryTrigger(Player* player, PlayerDQState& ps);
     bool SpawnCourier(Player* player, PlayerDQState& ps, uint32 templateId, const CourierSelection& sel);
-    // Dispatches to the appropriate DQSpawnSystem call based on beat's spawn_style.
-    TempSummon* SpawnWithStyle(Player* player, const DQSpawnDesc& desc,
-        const std::string& style);
+    // Resolves courier entry + displayId for an archetype. Returns false if no entry found.
+    bool SelectCourier(uint32 archetypeId, const PlayerDQState& ps, CourierSelection& out) const;
     void TransitionState(Player* player, PlayerDQState& ps, DQPlayerState newState);
     uint32 RollCooldown(uint8 tier) const;
     void AddToHistory(PlayerDQState& ps, uint32 templateId);

@@ -25,7 +25,11 @@ INSERT INTO `dq_archetype_beat`
      `emotion`, `emotion_end`,
      `text_on_accept`, `text_on_complete`,
      `item_prereq_class`, `item_prereq_subclass`, `item_consume`,
-     `cost_gold_percent`, `cost_hp_percent`)
+     `cost_gold_percent`, `cost_hp_percent`,
+     `mechanic_passive`, `choice_success_transition`, `choice_fail_transition`,
+     `entry_animation`, `exit_animation`,
+     `entry_spell`, `exit_spell`, `aura_spell`,
+     `fight_threshold`, `cast_school`, `npc_level_offset`)
 VALUES
     (3, 1, 0, 0, 'courier',
      'quest_complete', 1,
@@ -38,4 +42,8 @@ VALUES
      'Thank you. You are very kind.',
      'The child takes the bread and runs off, smiling.',
      15, 5, 1,
-     0, 0);
+     0, 0,
+     0, 0, 0,
+     'approaches', 'despawn',
+     0, 0, 0,
+     15, 0, 0);

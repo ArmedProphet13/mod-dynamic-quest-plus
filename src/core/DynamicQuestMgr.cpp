@@ -4,6 +4,7 @@
  */
 
 #include "DynamicQuestMgr.h"
+#include "DQClientSession.h"
 #include "DQDialogueMgr.h"
 #include "DQSpawnSystem.h"
 #include "WorldCatalogue.h"
@@ -20,7 +21,7 @@
 #include "DatabaseEnv.h"
 #include "GameObject.h"
 #include "GameTime.h"
-#include "Log.h"
+#include "DQLog.h"
 #include "Map.h"
 #include "MotionMaster.h"
 #include "ObjectAccessor.h"
@@ -76,8 +77,7 @@ void DynamicQuestMgr::Initialize()
     sDQDialogue->LoadFromDB();
     RegisterMechanics();
 
-    LOG_INFO("module.dynamicquests",
-        "DynamicQuests+: Initialized. CatalogueEntries={} Archetypes={} Mechanics={}",
+    DQ_LOG_INFO(DQ_LOG_CAT_STATE, nullptr, "Initialized. CatalogueEntries={} Archetypes={} Mechanics={}",
         sWorldCatalogue->GetEntryCount(), sArchetypeMgr->GetCount(), _mechanics.size());
 }
 
@@ -99,14 +99,13 @@ void DynamicQuestMgr::LoadConfig()
     cfg_tier2Chance      = sConfigMgr->GetOption<uint32>("DynamicQuests.Tier2Chance", 20);
     cfg_courierSpeedBonus = sConfigMgr->GetOption<float>("DynamicQuests.CourierSpeedBonus", 1.25f);
     cfg_courierTimeoutMs = sConfigMgr->GetOption<uint32>("DynamicQuests.CourierTimeoutSeconds", 45) * 1000;
-    cfg_verbose          = sConfigMgr->GetOption<bool>  ("DynamicQuests.VerboseLogging", false);
 }
 
 void DynamicQuestMgr::ReloadTemplates()
 {
     sWorldCatalogue->LoadFromDB();
     sArchetypeMgr->LoadFromDB();
-    LOG_INFO("module.dynamicquests", "DynamicQuests+: Reloaded. CatalogueEntries={} Archetypes={}",
+    DQ_LOG_INFO(DQ_LOG_CAT_STATE, nullptr, "Reloaded. CatalogueEntries={} Archetypes={}",
         sWorldCatalogue->GetEntryCount(), sArchetypeMgr->GetCount());
 }
 
@@ -136,6 +135,15 @@ void DynamicQuestMgr::OnPlayerUpdate(Player* player, uint32 diff)
 
         case DQ_STATE_INBOUND:
             TickInbound(player, ps, diff);
+            break;
+
+        case DQ_STATE_DELIVERING:
+            // Tick the gossip session expiry. On expiry, abort (player ignored the courier).
+            if (DQClientSession::Tick(ps.pendingSession, diff))
+            {
+                DQ_LOG_DEBUG(DQ_LOG_CAT_SESSION, player, "Gossip session expired. Aborting.");
+                AbortInteraction(player);
+            }
             break;
 
         case DQ_STATE_ON_QUEST:
@@ -211,7 +219,7 @@ void DynamicQuestMgr::OnPlayerLogout(Player* player)
 
     _states.erase(player->GetGUID().GetRawValue());
 
-    LOG_DEBUG("module.dynamicquests", "Player {} logged out. DQ state saved.", player->GetName());
+    DQ_LOG_DEBUG(DQ_LOG_CAT_STATE, player, "Logged out. DQ state saved.");
 }
 
 void DynamicQuestMgr::OnPlayerLogin(Player* player)
@@ -261,8 +269,7 @@ void DynamicQuestMgr::OnPlayerLogin(Player* player)
             })
     );
 
-    LOG_DEBUG("module.dynamicquests", "Player {} logged in. DQ data loading async.",
-        player->GetName());
+    DQ_LOG_DEBUG(DQ_LOG_CAT_STATE, player, "Logged in. DQ data loading async.");
 }
 
 // ---------------------------------------------------------------------------
@@ -275,19 +282,21 @@ void DynamicQuestMgr::OnCourierArrived(Player* player, Creature* courier)
     if (ps.state != DQ_STATE_INBOUND)
         return;
 
-    // Set up the interaction instance for this delivery
+    // Preserve portal/aux GUIDs placed by SpawnCourier so OnCleanup can delete them.
+    auto savedAuxGuids = std::move(ps.activeInst.auxGuidList);
+
     ps.activeInst = {};
     ps.activeInst.templateId  = ps.activeTemplateId;
     ps.activeInst.courierGuid = courier ? courier->GetGUID() : ps.courierGuid;
     ps.activeInst.phaseBit    = ps.activePhaseBit; // propagate to mechanics for private spawns
+    ps.activeInst.auxGuidList = std::move(savedAuxGuids);
 
     TransitionState(player, ps, DQ_STATE_DELIVERING);
 
     if (IMechanicModule* m = GetMechanic(ps.activeTemplateId))
         m->OnStart(player, courier, ps.activeInst);
 
-    LOG_INFO("module.dynamicquests", "Courier arrived for player {}. Template={}",
-        player->GetName(), ps.activeTemplateId);
+    DQ_LOG_INFO(DQ_LOG_CAT_COURIER, player, "Courier arrived. Template={}", ps.activeTemplateId);
 }
 
 void DynamicQuestMgr::OnInteractionAccepted(Player* player, uint32 templateId, uint32 choiceIdx)
@@ -303,8 +312,7 @@ void DynamicQuestMgr::OnInteractionAccepted(Player* player, uint32 templateId, u
     if (IMechanicModule* m = GetMechanic(templateId))
         m->OnChoice(player, choiceIdx, ps.activeInst);
 
-    LOG_INFO("module.dynamicquests", "Player {} accepted interaction template={} choice={}",
-        player->GetName(), templateId, choiceIdx);
+    DQ_LOG_INFO(DQ_LOG_CAT_SESSION, player, "Interaction accepted. template={} choice={}", templateId, choiceIdx);
 }
 
 void DynamicQuestMgr::OnInteractionDeclined(Player* player)
@@ -313,8 +321,7 @@ void DynamicQuestMgr::OnInteractionDeclined(Player* player)
     ReleasePhase(player, ps);
     TransitionState(player, ps, DQ_STATE_COOLDOWN);
     ps.cooldownRemainMs = RollCooldown(1);
-    LOG_INFO("module.dynamicquests", "Player {} declined interaction. Cooldown={}s",
-        player->GetName(), ps.cooldownRemainMs / 1000);
+    DQ_LOG_INFO(DQ_LOG_CAT_SESSION, player, "Interaction declined. Cooldown={}s", ps.cooldownRemainMs / 1000);
 }
 
 void DynamicQuestMgr::OnInteractionComplete(Player* player)
@@ -334,8 +341,7 @@ void DynamicQuestMgr::OnInteractionComplete(Player* player)
     TransitionState(player, ps, DQ_STATE_COOLDOWN);
     ps.cooldownRemainMs = RollCooldown(1);
 
-    LOG_INFO("module.dynamicquests", "Player {} completed interaction. cooldown={}s",
-        player->GetName(), ps.cooldownRemainMs / 1000);
+    DQ_LOG_INFO(DQ_LOG_CAT_STATE, player, "Interaction completed. cooldown={}s", ps.cooldownRemainMs / 1000);
 }
 
 void DynamicQuestMgr::OnInteractionFailed(Player* player)
@@ -391,8 +397,7 @@ void DynamicQuestMgr::ForceTriggger(Player* player, uint32 templateId)
 
         if (selectedTemplate == 0)
         {
-            LOG_ERROR("module.dynamicquests", "ForceTriggger: No template found for player {} (level={}, zone={}).",
-                player->GetName(), playerLevel, playerZone);
+            DQ_LOG_ERROR(DQ_LOG_CAT_STATE, player, "ForceTriggger: No template found (level={}, zone={}).", playerLevel, playerZone);
             return;
         }
     }
@@ -402,17 +407,11 @@ void DynamicQuestMgr::ForceTriggger(Player* player, uint32 templateId)
     {
         uint32 archetypeId = DecodeArchetypeId(selectedTemplate);
         CourierSelection sel;
-        sel.entry = sWorldCatalogue->GetCourierEntryForTheme("social");
-        if (sel.entry == 0)
+        if (!SelectCourier(archetypeId, ps, sel))
         {
-            LOG_WARN("module.dynamicquests", "ForceTriggger: No social courier entry for archetype {}.",
-                archetypeId);
+            DQ_LOG_WARN(DQ_LOG_CAT_SPAWN, player, "ForceTriggger: No social courier entry for archetype {}.", archetypeId);
             return;
         }
-        if (const ArchetypeDef* def = sArchetypeMgr->Get(archetypeId))
-            if (!def->appearance.empty())
-                sel.displayId = sWorldCatalogue->GetWorldCourierDisplayId(
-                    ps.ctx.zoneId, SplitTags(def->appearance), {}, 1);
         SpawnCourier(player, ps, selectedTemplate, sel);
     }
 }
@@ -420,6 +419,7 @@ void DynamicQuestMgr::ForceTriggger(Player* player, uint32 templateId)
 void DynamicQuestMgr::AbortInteraction(Player* player)
 {
     PlayerDQState& ps = GetOrCreate(player->GetGUID());
+    DQClientSession::Close(ps.pendingSession);
     ReleasePhase(player, ps);
 
     // Notify mechanic to clean up any spawns
@@ -438,7 +438,8 @@ void DynamicQuestMgr::AbortInteraction(Player* player)
     ps.activeQuestId    = 0;
     ps.courierTimeoutMs = 0;
     ps.activeInst       = {};
-    TransitionState(player, ps, DQ_STATE_IDLE);
+    ps.cooldownRemainMs = RollCooldown(1);
+    TransitionState(player, ps, DQ_STATE_COOLDOWN);
 }
 
 std::string DynamicQuestMgr::GetStatusString(Player* player) const
@@ -522,7 +523,7 @@ void DynamicQuestMgr::ClearHistory(Player* player)
     ps.consecutiveTier1 = 0;
     CharacterDatabase.Execute("DELETE FROM character_dq_history WHERE guid = {}",
         player->GetGUID().GetCounter());
-    LOG_DEBUG("module.dynamicquests", "History cleared for player {}.", player->GetName());
+    DQ_LOG_DEBUG(DQ_LOG_CAT_STATE, player, "History cleared.");
 }
 
 void DynamicQuestMgr::ForceAdvanceEpisode(Player* player)
@@ -538,6 +539,11 @@ uint32 DynamicQuestMgr::GetActiveTemplateId(Player* player) const
 {
     const PlayerDQState* ps = Get(player->GetGUID());
     return ps ? ps->activeTemplateId : 0;
+}
+
+DQPendingSession& DynamicQuestMgr::PendingSession(Player* player)
+{
+    return GetOrCreate(player->GetGUID()).pendingSession;
 }
 
 const InteractionInstance* DynamicQuestMgr::GetActiveInst(Player* player) const
@@ -634,8 +640,7 @@ void DynamicQuestMgr::TickInbound(Player* player, PlayerDQState& ps, uint32 diff
     if (ps.courierTimeoutMs <= diff)
     {
         // Courier timed out — player moved away, zoned, went indoors
-        LOG_DEBUG("module.dynamicquests.courier", "Courier timeout for player {}. Aborting.",
-            player->GetName());
+        DQ_LOG_DEBUG(DQ_LOG_CAT_COURIER, player, "Courier timeout. Aborting.");
         AbortInteraction(player);
         ps.cooldownRemainMs = RollCooldown(1);
         ps.state = DQ_STATE_COOLDOWN;
@@ -706,17 +711,11 @@ void DynamicQuestMgr::TryTrigger(Player* player, PlayerDQState& ps)
 
     uint32 archetypeId = DecodeArchetypeId(selectedId);
     CourierSelection sel;
-    sel.entry = sWorldCatalogue->GetCourierEntryForTheme("social");
-    if (sel.entry == 0)
+    if (!SelectCourier(archetypeId, ps, sel))
     {
-        LOG_WARN("module.dynamicquests",
-            "TryTrigger: No social courier entry for archetype {}. Skipping.", archetypeId);
+        DQ_LOG_WARN(DQ_LOG_CAT_SPAWN, player, "TryTrigger: No social courier entry for archetype {}. Skipping.", archetypeId);
         return;
     }
-    if (const ArchetypeDef* def = sArchetypeMgr->Get(archetypeId))
-        if (!def->appearance.empty())
-            sel.displayId = sWorldCatalogue->GetWorldCourierDisplayId(
-                ps.ctx.zoneId, SplitTags(def->appearance), {}, 1);
 
     SpawnCourier(player, ps, selectedId, sel);
 }
@@ -729,8 +728,7 @@ bool DynamicQuestMgr::SpawnCourier(Player* player, PlayerDQState& ps,
     // Must be released explicitly if spawning fails.
     uint32 phaseBit = _phasePool.Acquire();
     if (phaseBit == 0)
-        LOG_WARN("module.dynamicquests",
-            "Phase pool exhausted — courier for player {} is world-visible.", player->GetName());
+        DQ_LOG_WARN(DQ_LOG_CAT_SPAWN, player, "Phase pool exhausted — courier is world-visible.");
 
     DQSpawnDesc desc;
     desc.entry      = sel.entry;
@@ -738,20 +736,31 @@ bool DynamicQuestMgr::SpawnCourier(Player* player, PlayerDQState& ps,
     desc.displayId  = sel.displayId;
     desc.scaleLevel = true;
 
+    // Set activeTemplateId AND pre-init activeInst BEFORE SummonCreature so
+    // DQ_CourierAI::InitializeAI can read templateId + currentPhase to resolve
+    // the beat's emotion definition.
+    ps.activeTemplateId = templateId;
+
     // Spawn style is read from the current beat's spawn_style column.
     uint32 archetypeId = DecodeArchetypeId(templateId);
     auto   it          = ps.archetypeProgress.find(archetypeId);
     uint8  beatNum     = (it != ps.archetypeProgress.end() && it->second != 0xFF)
                             ? it->second : 1;
+
+    // Pre-seed activeInst so InitializeAI sees a valid templateId and beat number.
+    // OnCourierArrived will re-initialise this fully; we just need the identity fields.
+    ps.activeInst.templateId   = templateId;
+    ps.activeInst.currentPhase = beatNum;
+
     const ArchetypeBeat* beat  = sArchetypeMgr->GetBeat(archetypeId, beatNum);
     const std::string&   style = beat ? beat->spawnStyle : "approaches";
-    TempSummon* courier = SpawnWithStyle(player, desc, style);
+    TempSummon* courier = DQSpawnSystem::SpawnWithStyle(player, desc, style,
+        &ps.activeInst.auxGuidList);
 
     if (!courier)
     {
         _phasePool.Release(phaseBit);
-        LOG_DEBUG("module.dynamicquests",
-            "SpawnCourier: failed for player {} (Z abort or summon failure).", player->GetName());
+        DQ_LOG_DEBUG(DQ_LOG_CAT_SPAWN, player, "SpawnCourier failed (Z abort or summon failure).");
         return false;
     }
 
@@ -767,7 +776,6 @@ bool DynamicQuestMgr::SpawnCourier(Player* player, PlayerDQState& ps,
     }
 
     ps.courierGuid      = courier->GetGUID();
-    ps.activeTemplateId = templateId;
     ps.courierTimeoutMs = cfg_courierTimeoutMs;
     RegisterActiveCourier(courier->GetGUID(), player->GetGUID());
     if (const ArchetypeDef* def = sArchetypeMgr->Get(DecodeArchetypeId(templateId)))
@@ -777,8 +785,8 @@ bool DynamicQuestMgr::SpawnCourier(Player* player, PlayerDQState& ps,
 
     TransitionState(player, ps, DQ_STATE_INBOUND);
 
-    LOG_INFO("module.dynamicquests", "Courier spawned: entry={} displayId={} template={} player={}",
-        sel.entry, sel.displayId, templateId, player->GetName());
+    DQ_LOG_INFO(DQ_LOG_CAT_SPAWN, player, "Courier spawned: entry={} displayId={} template={}",
+        sel.entry, sel.displayId, templateId);
 
     if (ps.debugMode)
         ChatHandler(player->GetSession()).SendSysMessage(fmt::format(
@@ -788,67 +796,17 @@ bool DynamicQuestMgr::SpawnCourier(Player* player, PlayerDQState& ps,
     return true;
 }
 
-TempSummon* DynamicQuestMgr::SpawnWithStyle(Player* player, const DQSpawnDesc& desc,
-    const std::string& style)
+bool DynamicQuestMgr::SelectCourier(uint32 archetypeId,
+    const PlayerDQState& ps, CourierSelection& out) const
 {
-    // "approaches" — 22y ahead → MoveFollow (default)
-    if (style.empty() || style == "approaches")
-        return DQSpawnSystem::SpawnCourier(player, desc, 22.0f);
-
-    // "distant" — 55y down the road; same MoveFollow arrival
-    if (style == "distant")
-        return DQSpawnSystem::SpawnCourier(player, desc, 55.0f);
-
-    // "run_up" — sprints from 40y at 1.8× run speed
-    if (style == "run_up")
-    {
-        TempSummon* c = DQSpawnSystem::SpawnCourier(player, desc, 40.0f);
-        if (c)
-            c->SetSpeed(MOVE_RUN, c->GetSpeed(MOVE_RUN) * 1.8f);
-        return c;
-    }
-
-    // "roadside" — 25y ahead + 12y to the player's right; DQ_CourierAI starts MoveFollow
-    if (style == "roadside")
-    {
-        float fwd = player->GetOrientation();
-        float lat = fwd - float(M_PI) * 0.5f; // 90° clockwise = right side
-        float px  = player->GetPositionX()
-                    + 25.0f * std::cos(fwd)
-                    + 12.0f * std::cos(lat);
-        float py  = player->GetPositionY()
-                    + 25.0f * std::sin(fwd)
-                    + 12.0f * std::sin(lat);
-        Position pos(px, py, player->GetPositionZ(), fwd + float(M_PI));
-        return DQSpawnSystem::SpawnStationary(player, pos, desc);
-    }
-
-    // "waiting" / "collapses" — spawn within arrive-distance (2y) so courier transitions
-    // on the first AI tick without visibly walking; emote_on_arrive fires via OnCourierArrived
-    if (style == "waiting" || style == "collapses")
-        return DQSpawnSystem::SpawnCourier(player, desc, 2.0f);
-
-    // "from_portal" — summoning portal GO (entry 36727) appears at 6y; courier emerges from it
-    if (style == "from_portal")
-    {
-        constexpr uint32 PORTAL_GO_ENTRY = 36727;
-        constexpr uint32 PORTAL_DURATION = 8000;
-        float ang = player->GetOrientation();
-        float px  = player->GetPositionX() + 6.0f * std::cos(ang);
-        float py  = player->GetPositionY() + 6.0f * std::sin(ang);
-        Position portalPos(px, py, player->GetPositionZ(), 0.0f);
-        DQSpawnSystem::SpawnGameObject(player, PORTAL_GO_ENTRY, portalPos,
-            desc.phaseBit, PORTAL_DURATION);
-        return DQSpawnSystem::SpawnCourier(player, desc, 6.0f);
-    }
-
-    // "from_shadow" — short approach (8y); feels like stepping from concealment
-    if (style == "from_shadow")
-        return DQSpawnSystem::SpawnCourier(player, desc, 8.0f);
-
-    LOG_WARN("module.dynamicquests",
-        "SpawnWithStyle: unknown style '{}' — falling back to 'approaches'.", style);
-    return DQSpawnSystem::SpawnCourier(player, desc, 22.0f);
+    out.entry = sWorldCatalogue->GetCourierEntryForTheme("social");
+    if (out.entry == 0)
+        return false;
+    if (const ArchetypeDef* def = sArchetypeMgr->Get(archetypeId))
+        if (!def->appearance.empty())
+            out.displayId = sWorldCatalogue->GetWorldCourierDisplayId(
+                ps.ctx.zoneId, SplitTags(def->appearance), {}, 1);
+    return true;
 }
 
 void DynamicQuestMgr::TransitionState(Player* player, PlayerDQState& ps, DQPlayerState newState)
@@ -856,8 +814,7 @@ void DynamicQuestMgr::TransitionState(Player* player, PlayerDQState& ps, DQPlaye
     if (ps.state == newState)
         return;
 
-    LOG_DEBUG("module.dynamicquests", "Player {} state: {} -> {}",
-        player->GetName(), DQPlayerStateStr(ps.state), DQPlayerStateStr(newState));
+    DQ_LOG_DEBUG(DQ_LOG_CAT_STATE, player, "State: {} -> {}", DQPlayerStateStr(ps.state), DQPlayerStateStr(newState));
 
     ps.state = newState;
 }
@@ -914,8 +871,7 @@ void DynamicQuestMgr::ApplyLoginData(ObjectGuid playerGuid, QueryResult result)
             ps.cooldownRemainMs = RollCooldown(1);
     }
 
-    LOG_DEBUG("module.dynamicquests", "Player {} DQ data applied. cooldown={}s",
-        player->GetName(), ps.cooldownRemainMs / 1000);
+    DQ_LOG_DEBUG(DQ_LOG_CAT_STATE, player, "DQ data applied. cooldown={}s", ps.cooldownRemainMs / 1000);
 }
 
 void DynamicQuestMgr::ApplyArchetypeData(ObjectGuid playerGuid, QueryResult result)
@@ -935,8 +891,7 @@ void DynamicQuestMgr::ApplyArchetypeData(ObjectGuid playerGuid, QueryResult resu
         } while (result->NextRow());
     }
 
-    LOG_DEBUG("module.dynamicquests", "Archetype progress loaded: {} entries.",
-        ps.archetypeProgress.size());
+    DQ_LOG_DEBUG(DQ_LOG_CAT_STATE, nullptr, "Archetype progress loaded: {} entries.", ps.archetypeProgress.size());
 }
 
 // ---------------------------------------------------------------------------
@@ -1039,8 +994,8 @@ void DynamicQuestMgr::OnCourierConceded(Player* player)
         return;
 
     IMechanicModule* m = GetMechanic(ps->activeTemplateId);
-    if (auto* arch = dynamic_cast<MechanicArchetype*>(m))
-        arch->OnFightConcede(player, ps->activeInst);
+    if (m)
+        m->OnFightConcede(player, ps->activeInst);
 }
 
 void DynamicQuestMgr::OnArchetypeBeatAdvanced(Player* player, uint32 archetypeId, uint8 beatOrCompleted)

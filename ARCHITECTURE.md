@@ -204,6 +204,151 @@ ArchetypeMgr (data, read-only)
 
 ---
 
+## DQLog — Structured Logging
+
+**File:** `src/core/DQLog.h` (header-only)
+
+### Purpose
+Thin wrapper over AC's native `LOG_*` macros. Adds two things the raw macros lack:
+subcategory filtering per system, and automatic `[PlayerName]` prefixing so every line
+in the server log is traceable to a specific player without any extra call-site work.
+
+### Category hierarchy
+```
+module.dynamicquests              ← parent (set by .dq debug on/off)
+  ├─ module.dynamicquests.state   ← state machine transitions, login/logout
+  ├─ module.dynamicquests.courier ← spawn, movement, arrival, timeout
+  ├─ module.dynamicquests.session ← gossip open/validate/close/expire
+  ├─ module.dynamicquests.beat    ← beat start/complete/fail
+  ├─ module.dynamicquests.spawn   ← DQSpawnSystem events
+  └─ module.dynamicquests.context ← tag resolution
+```
+
+AC's logger hierarchy walks upward automatically:
+`module.dynamicquests.courier` → `module.dynamicquests` → `module` → `root`
+
+### .dq debug on/off
+```cpp
+// on:
+sLog->SetLogLevel("module.dynamicquests", static_cast<int32>(LOG_LEVEL_DEBUG), true);
+// off:
+sLog->SetLogLevel("module.dynamicquests", static_cast<int32>(LOG_LEVEL_INFO), true);
+```
+One call on the parent propagates to all six subcategories. No per-subcat calls needed.
+
+### worldserver.conf (optional static override)
+```ini
+Logger.module.dynamicquests=4,Console Server   # 4 = INFO (default)
+```
+
+### Usage
+```cpp
+// player != nullptr → "[PlayerName] " is prepended automatically
+DQ_LOG_DEBUG(DQ_LOG_CAT_COURIER, player, "Courier arrived. Template={}", ps.activeTemplateId);
+DQ_LOG_INFO (DQ_LOG_CAT_STATE,   nullptr, "Initialized. CatalogueEntries={}", n);
+DQ_LOG_WARN (DQ_LOG_CAT_SESSION, player, "menuId mismatch. sent={} received={}", s, r);
+DQ_LOG_ERROR(DQ_LOG_CAT_STATE,   player, "No template found (level={}, zone={}).", lv, z);
+```
+
+### Adding logging to a new file
+1. `#include "DQLog.h"` (includes `Log.h` transitively — do not include `Log.h` directly)
+2. Pick the closest subcategory constant (`DQ_LOG_CAT_*`)
+3. Use `DQ_LOG_DEBUG` for trace/diagnostic lines, `DQ_LOG_INFO` for lifecycle events
+
+---
+
+## DQClientSession — Client Communication Layer
+
+**Files:** `src/core/DQClientSession.h`, `src/core/DQClientSession.cpp`
+
+### Purpose
+Single owner of every gossip send/receive for DQ+ interactions. Before this system
+existed, gossip sending lived in `DQDialogueMgr`, gossip receiving was split between
+`DQ_CourierScript` and `DQ_CourierCreatureAI`, timeout lived in the AI's `_waitTimer`,
+and session validation was implicit (no record of what was sent). There was no single
+place that could answer: "does this response belong to the menu we sent?"
+
+The immediate motivation: `GossipMenu::ClearMenu()` does NOT reset `_menuId`, and
+`SetMenuId()` was never called, so every gossip packet left the server with `menuId=0`.
+The WoW 3.3.5a client may require a non-zero `menuId` to render the gossip window.
+`DQClientSession::Open` stamps a unique non-zero `menuId` before sending, fixing this.
+
+### DQPendingSession — lifecycle
+```cpp
+struct DQPendingSession
+{
+    ObjectGuid npcGuid;   // creature the gossip was sent from
+    uint32     menuId;    // non-zero = session active; 0 = no session (sentinel)
+    uint32     expiryMs;  // ms remaining before Tick() fires expiry
+};
+```
+Stored in `PlayerDQState::pendingSession`. Default-constructed with `menuId=0` = closed.
+
+| State    | menuId | Meaning                        |
+|----------|--------|--------------------------------|
+| Closed   | 0      | No gossip waiting for response |
+| Open     | 1-65535| Gossip was sent, awaiting reply|
+| Expired  | reset to 0 after Tick() fires  |
+
+### API
+```cpp
+// Build menu + SetMenuId + Send. Fills |out| with session identity.
+// expiryMs defaults to 120s; caller passes sDQMgr->cfg_courierTimeoutMs.
+DQClientSession::Open(player, courier, def, beat, ps.pendingSession, expiryMs);
+
+// Validate an incoming gossip select. Returns false on npcGuid or menuId mismatch.
+DQClientSession::Validate(player, creature, incomingMenuId, ps.pendingSession);
+
+// Advance expiry countdown. Returns true once when session expires.
+DQClientSession::Tick(ps.pendingSession, diff);
+
+// Zero the session.
+DQClientSession::Close(ps.pendingSession);
+```
+
+### menuId generation
+`NextMenuId()` uses a module-static `std::atomic<uint32>` counter. Monotonically
+increasing, skips 0, wraps at 0xFFFF (fits in the WoW gossip packet's uint32 field).
+
+### DQDialogueMgr responsibility boundary
+`DQDialogueMgr::BuildBeatMenu(Player*, const ArchetypeDef&, const ArchetypeBeat&)` — builds only:
+- `ClearGossipMenuFor`
+- `AddGossipItemFor` (buttons based on mechanic type)
+
+Does NOT call `SendGossipMenuFor`. `DQClientSession::Open` calls `BuildBeatMenu` first,
+then stamps `menuId`, then sends. This ordering guarantees the packet carries the ID.
+
+### Data flow
+```
+HandleGossipHello
+  └─ DQClientSession::Open
+       ├─ DQDialogueMgr::BuildBeatMenu  (build items, no send)
+       ├─ GossipMenu::SetMenuId(N)       (stamp unique non-zero ID)
+       └─ SendGossipMenuFor              (SMSG_GOSSIP_MESSAGE → client)
+
+                        client echoes menuId in CMSG_GOSSIP_SELECT_OPTION
+
+sGossipSelect (AI override)
+  └─ caches menuId as _lastMenuId
+
+HandleGossipSelect
+  ├─ DQClientSession::Validate(_lastMenuId, pendingSession)  → false = discard
+  ├─ DQClientSession::Close(pendingSession)
+  └─ sDQMgr->OnInteractionAccepted / OnInteractionDeclined
+
+DynamicQuestMgr::OnPlayerUpdate (DQ_STATE_DELIVERING)
+  └─ DQClientSession::Tick(pendingSession, diff)
+       └─ on expiry → AbortInteraction (→ Close inside Abort)
+```
+
+### Adding a new gossip response type
+1. Assign a new action constant (avoid 0–3 = choices, 0xFE = decline)
+2. Add the button in `DQDialogueMgr::BuildBeatMenu` via `AddGossipItemFor`
+3. Route the new action in `HandleGossipSelect` before the existing `if (action == DQ_GOSSIP_DECLINE)` block
+4. Validation and session close are already handled generically — no changes needed there
+
+---
+
 ## Phase 2 — NPC Builder
 
 **Files:** `src/core/DQNPCBuilder.h`, `src/core/DQNPCBuilder.cpp`

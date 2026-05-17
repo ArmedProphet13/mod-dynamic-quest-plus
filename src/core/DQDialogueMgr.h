@@ -45,10 +45,10 @@ public:
     // Load dq_text_variant_pool from WorldDatabase.  Called on startup.
     void LoadFromDB();
 
-    // Build and send the gossip menu for the active beat.
-    // Uses beat mechanic + passive flag to decide which buttons appear.
-    void OpenBeatGossip(Player* player, Creature* npc,
-                        const ArchetypeDef& def, const ArchetypeBeat& beat);
+    // Build the gossip menu for the active beat (ClearGossipMenuFor + AddGossipItemFor only).
+    // Does NOT call SendGossipMenuFor — DQClientSession::Open does that after stamping menuId.
+    void BuildBeatMenu(Player* player,
+                       const ArchetypeDef& def, const ArchetypeBeat& beat);
 
     // Return a random text line from the pool matching emotion + textType.
     // contextTags is optional and used as a bonus filter; falls back to
