@@ -82,7 +82,7 @@ void ArchetypeMgr::LoadFromDB()
         "item_prereq_class, item_prereq_subclass, item_consume, "
         "cost_gold_percent, cost_hp_percent, "
         "mechanic_passive, choice_success_transition, choice_fail_transition, "
-        "entry_animation, exit_animation, "
+        "entry_animation, exit_animation, exit_style, "
         "entry_spell, exit_spell, aura_spell, "
         "fight_threshold, cast_school, npc_level_offset "
         "FROM dq_archetype_beat ORDER BY archetype_id, beat_number");
@@ -122,12 +122,13 @@ void ArchetypeMgr::LoadFromDB()
             beat.choiceFailTransition      = f[25].Get<uint8>();
             beat.entryAnimation            = f[26].Get<std::string>();
             beat.exitAnimation             = f[27].Get<std::string>();
-            beat.entrySpell                = f[28].Get<uint32>();
-            beat.exitSpell                 = f[29].Get<uint32>();
-            beat.auraSpell                 = f[30].Get<uint32>();
-            beat.fightThreshold            = f[31].Get<uint8>();
-            beat.castSchool                = f[32].Get<uint8>();
-            beat.npcLevelOffset            = f[33].Get<int8>();
+            beat.exitStyle                 = f[28].Get<std::string>();
+            beat.entrySpell                = f[29].Get<uint32>();
+            beat.exitSpell                 = f[30].Get<uint32>();
+            beat.auraSpell                 = f[31].Get<uint32>();
+            beat.fightThreshold            = f[32].Get<uint8>();
+            beat.castSchool                = f[33].Get<uint8>();
+            beat.npcLevelOffset            = f[34].Get<int8>();
 
             auto it = _idIndex.find(beat.archetypeId);
             if (it != _idIndex.end())

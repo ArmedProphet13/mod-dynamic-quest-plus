@@ -282,14 +282,16 @@ void DynamicQuestMgr::OnCourierArrived(Player* player, Creature* courier)
     if (ps.state != DQ_STATE_INBOUND)
         return;
 
-    // Preserve portal/aux GUIDs placed by SpawnCourier so OnCleanup can delete them.
-    auto savedAuxGuids = std::move(ps.activeInst.auxGuidList);
+    // Preserve portal/aux GUIDs and spawn pos placed by SpawnCourier so OnCleanup can use them.
+    auto     savedAuxGuids  = std::move(ps.activeInst.auxGuidList);
+    Position savedSpawnPos  = ps.courierSpawnPos;
 
     ps.activeInst = {};
-    ps.activeInst.templateId  = ps.activeTemplateId;
-    ps.activeInst.courierGuid = courier ? courier->GetGUID() : ps.courierGuid;
-    ps.activeInst.phaseBit    = ps.activePhaseBit; // propagate to mechanics for private spawns
-    ps.activeInst.auxGuidList = std::move(savedAuxGuids);
+    ps.activeInst.templateId      = ps.activeTemplateId;
+    ps.activeInst.courierGuid     = courier ? courier->GetGUID() : ps.courierGuid;
+    ps.activeInst.phaseBit        = ps.activePhaseBit; // propagate to mechanics for private spawns
+    ps.activeInst.auxGuidList     = std::move(savedAuxGuids);
+    ps.activeInst.courierSpawnPos = savedSpawnPos;
 
     TransitionState(player, ps, DQ_STATE_DELIVERING);
 
@@ -763,6 +765,8 @@ bool DynamicQuestMgr::SpawnCourier(Player* player, PlayerDQState& ps,
         DQ_LOG_DEBUG(DQ_LOG_CAT_SPAWN, player, "SpawnCourier failed (Z abort or summon failure).");
         return false;
     }
+
+    ps.courierSpawnPos = courier->GetPosition();
 
     // Apply phase to player so they see the normal world plus the private courier.
     if (phaseBit)

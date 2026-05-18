@@ -16,6 +16,7 @@
 #include "DQAnimationMgr.h"
 #include "DQDialogueMgr.h"
 #include "DQEmotionEngine.h"
+#include "DQExitSystem.h"
 #include "DQNPCBuilder.h"
 #include "DQSpawnSystem.h"
 #include "DynamicQuestMgr.h"
@@ -126,12 +127,28 @@ void MechanicArchetype::AdvanceBeat(Player* player, InteractionInstance& inst)
     if (nextBeat > def->totalBeats)
         completed = true;
 
-    // Phase 9: fire exit animation before the courier despawns.
+    // Fire exit: compute emote duration then hand off to DQExitSystem.
     if (beat)
     {
         Creature* courier = player->GetMap()->GetCreature(inst.courierGuid);
         if (courier)
-            sDQAnimation->PlayExit(courier, beat->exitAnimation, beat->exitSpell);
+        {
+            uint32 emoteDuration = 0;
+            if (!beat->emotion.empty())
+            {
+                const std::string& endName = beat->emotionEnd.empty() ? beat->emotion : beat->emotionEnd;
+                if (const DQEmotionDef* endDef = sDQEmotions->GetEmotion(endName))
+                    if (endDef->openerEmote != 0)
+                        emoteDuration = DQEmotionEngine::GetEmoteDuration(endDef->openerEmote);
+            }
+            DQExitDesc desc;
+            desc.style         = beat->exitStyle;
+            desc.animation     = beat->exitAnimation;
+            desc.spell         = beat->exitSpell;
+            desc.spawnPos      = inst.courierSpawnPos;
+            desc.emoteDuration = emoteDuration;
+            DQExitSystem::Execute(courier, player, desc);
+        }
     }
 
     inst.completed = completed;
@@ -386,17 +403,25 @@ void MechanicArchetype::OnCleanup(Player* player, InteractionInstance& inst)
 
     if (courier)
     {
-        uint32 despawnMs = 5000;
         uint32 archetypeId = DecodeArchetypeId(inst.templateId);
         const ArchetypeBeat* beat = sArchetypeMgr->GetBeat(archetypeId, inst.currentPhase);
+
+        uint32 emoteDuration = 0;
         if (beat && !beat->emotion.empty())
         {
             const std::string& endName = beat->emotionEnd.empty() ? beat->emotion : beat->emotionEnd;
             if (const DQEmotionDef* endDef = sDQEmotions->GetEmotion(endName))
                 if (endDef->openerEmote != 0)
-                    despawnMs = DQEmotionEngine::GetEmoteDuration(endDef->openerEmote) + 3000;
+                    emoteDuration = DQEmotionEngine::GetEmoteDuration(endDef->openerEmote);
         }
-        courier->DespawnOrUnsummon(Milliseconds(despawnMs));
+
+        DQExitDesc desc;
+        desc.style         = beat ? beat->exitStyle     : "instant";
+        desc.animation     = beat ? beat->exitAnimation : "";
+        desc.spell         = beat ? beat->exitSpell     : 0;
+        desc.spawnPos      = inst.courierSpawnPos;
+        desc.emoteDuration = emoteDuration;
+        DQExitSystem::Execute(courier, player, desc);
     }
 
     for (ObjectGuid guid : inst.auxGuidList)

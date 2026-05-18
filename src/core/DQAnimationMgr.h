@@ -54,6 +54,10 @@ public:
     // Remove the persistent aura before the NPC despawns.
     void RemovePersistentAura(Creature* npc, uint32 spellId);
 
+    // Exit spell only: cast exitSpell on the NPC without scheduling a despawn.
+    // Used by DQExitSystem::ExitFade; the exit system owns the despawn timer.
+    void PlayExitSpell(Creature* npc, uint32 spellId);
+
     // Brief objective-complete visual: plays EMOTE_ONESHOT_APPLAUD on the NPC.
     void PlayBeatTransition(Creature* npc, Player* player);
 

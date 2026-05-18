@@ -114,6 +114,7 @@ struct PlayerDQState
     uint32  activeTemplateId    = 0;
     uint32  activeQuestId       = 0; // 0 if gossip-only interaction
     uint32  activePhaseBit      = 0; // private phase slot; 0 = world-visible fallback
+    Position courierSpawnPos;        // captured at spawn; used by DQExitSystem for walk-back
 
     // Consecutive tier 1 counter for escalation
     uint8   consecutiveTier1    = 0;

@@ -97,6 +97,7 @@ struct ArchetypeBeat
     // System 6: animation sequences
     std::string entryAnimation  = "approaches"; // approaches|from_portal|fade_in|materialize
     std::string exitAnimation   = "despawn";    // despawn|fade_out|portal_exit|dissolve
+    std::string exitStyle       = "reverse";    // reverse|forward|away|portal_out|instant|fade
 
     // System 6: dummy spell IDs (0=none)
     uint32  entrySpell         = 0;        // spell cast on NPC at entry

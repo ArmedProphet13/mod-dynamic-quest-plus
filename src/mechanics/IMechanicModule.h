@@ -8,6 +8,7 @@
 
 #include "Define.h"
 #include "ObjectGuid.h"
+#include "Position.h"
 #include <string>
 #include <vector>
 
@@ -40,6 +41,9 @@ struct InteractionInstance
     // Private phase bit assigned to this interaction's courier.
     // Non-zero: all mechanic-spawned creatures should be set to this phase.
     uint32 phaseBit = 0;
+
+    // World position where the courier first appeared — used by DQExitSystem for walk-back.
+    Position courierSpawnPos;
 
     // Fight handler: HP% below which a hostile NPC concedes (from beat.fightThreshold).
     uint8  concedePct = 15;

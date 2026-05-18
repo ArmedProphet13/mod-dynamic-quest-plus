@@ -21,6 +21,7 @@
 #include "DQClientSession.h"
 #include "DQDialogueMgr.h"
 #include "DQEmotionEngine.h"
+#include "DQExitSystem.h"
 #include "DQLog.h"
 #include "DynamicQuestMgr.h"
 #include "GossipDef.h"
@@ -61,15 +62,16 @@ static Item* FindItemByClassSubclass(Player* player, uint8 itemClass, uint8 item
     return nullptr;
 }
 
-static constexpr float  ARRIVE_DIST        = 3.0f;
-static constexpr uint32 REVEAL_DELAY_MS    = 900;    // invisible spawn → visible after this ms
-static constexpr uint32 DECLINE_DESPAWN_MS = 4000;   // ms before courier despawns after decline
+static constexpr float  ARRIVE_DIST     = 3.0f;
+static constexpr uint32 REVEAL_DELAY_MS = 900;   // invisible spawn → visible after this ms
+static constexpr uint32 DQ_EXIT_POINT_ID = 9001; // MovePoint ID for departure walk
 
 enum DCPhase : uint8
 {
     DCP_APPROACHING = 0,
     DCP_ARRIVED     = 1,
     DCP_ACCEPTED    = 2,
+    DCP_DEPARTING   = 3,
 };
 
 // ── AI ─────────────────────────────────────────────────────────────────────────
@@ -88,10 +90,13 @@ public:
         , _gossipOpenTimer(0)
         , _talkStepTimer(0)
         , _closeTimer(0)
+        , _departureDelay(0)
     {}
 
     void InitializeAI() override
     {
+        _spawnPos = me->GetPosition();
+
         me->SetReactState(REACT_PASSIVE);
         me->SetUInt32Value(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
         me->SetNpcFlag(UNIT_NPC_FLAG_GOSSIP);
@@ -156,6 +161,7 @@ public:
         {
             case DCP_APPROACHING: TickApproaching(player, diff); break;
             case DCP_ARRIVED:     TickArrived(player, diff);     break;
+            case DCP_DEPARTING:   TickDeparting(diff);           break;
             default:                                              break;
         }
     }
@@ -201,7 +207,12 @@ public:
 
         if (action == DQ_GOSSIP_DECLINE)
         {
-            me->DespawnOrUnsummon(Milliseconds(DECLINE_DESPAWN_MS));
+            DQExitDesc desc;
+            desc.style         = "reverse";
+            desc.spawnPos      = _spawnPos;
+            desc.emoteDuration = (_emotionDef && _emotionDef->closeEmote != 0)
+                ? DQEmotionEngine::GetEmoteDuration(_emotionDef->closeEmote) : 0;
+            DQExitSystem::Execute(me, player, desc);
             sDQMgr->OnInteractionDeclined(player);
             return true;
         }
@@ -247,6 +258,23 @@ public:
         }
     }
 
+public:
+    // Called by DQExitSystem to start the departure walk.
+    // dest: world position to walk to. emoteDuration: ms pause before walk starts.
+    void BeginDeparture(const Position& dest, uint32 emoteDuration)
+    {
+        _phase           = DCP_DEPARTING;
+        _departureTarget = dest;
+        _departureDelay  = emoteDuration + 500;
+        me->GetMotionMaster()->Clear();
+    }
+
+    void MovementInform(uint32 type, uint32 id) override
+    {
+        if (_phase == DCP_DEPARTING && type == POINT_MOTION_TYPE && id == DQ_EXIT_POINT_ID)
+            me->DespawnOrUnsummon(Milliseconds(200));
+    }
+
 private:
     DCPhase             _phase;
     uint32              _revealTimer;
@@ -257,6 +285,9 @@ private:
     uint32              _gossipOpenTimer; // fires after openerEmote duration + 200ms
     uint32              _talkStepTimer;  // countdown for current talk/emotion step
     uint32              _closeTimer;     // countdown after close emote fires (accept path)
+    Position            _spawnPos;       // captured at InitializeAI; walk-back destination
+    uint32              _departureDelay; // ms remaining before departure walk starts
+    Position            _departureTarget;
 
     void TickApproaching(Player* player, uint32 /*diff*/)
     {
@@ -383,6 +414,21 @@ private:
             CloseGossipMenuFor(player);
     }
 
+    void TickDeparting(uint32 diff)
+    {
+        if (_departureDelay > diff)
+        {
+            _departureDelay -= diff;
+            return;
+        }
+        if (_departureDelay > 0)
+        {
+            _departureDelay = 0;
+            me->SetWalk(true);
+            me->GetMotionMaster()->MovePoint(DQ_EXIT_POINT_ID, _departureTarget);
+        }
+    }
+
     void Abort()
     {
         if (Player* p = SummonerPlayer())
@@ -429,6 +475,18 @@ public:
         return new DQ_CourierCreatureAI(creature);
     }
 };
+
+// ---------------------------------------------------------------------------
+// DQCourierBeginDeparture — public bridge for DQExitSystem
+// ---------------------------------------------------------------------------
+
+void DQCourierBeginDeparture(Creature* courier, const Position& dest, uint32 emoteDuration)
+{
+    if (!courier)
+        return;
+    if (DQ_CourierCreatureAI* ai = CAST_AI(DQ_CourierCreatureAI, courier->AI()))
+        ai->BeginDeparture(dest, emoteDuration);
+}
 
 void AddSC_DQ_CourierAI()
 {

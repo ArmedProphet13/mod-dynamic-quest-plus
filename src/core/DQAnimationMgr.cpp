@@ -72,6 +72,18 @@ void DQAnimationMgr::RemovePersistentAura(Creature* npc, uint32 spellId)
 }
 
 // ---------------------------------------------------------------------------
+// PlayExitSpell
+// ---------------------------------------------------------------------------
+
+void DQAnimationMgr::PlayExitSpell(Creature* npc, uint32 spellId)
+{
+    if (!npc || spellId == 0)
+        return;
+
+    npc->CastSpell(npc, spellId, true);
+}
+
+// ---------------------------------------------------------------------------
 // PlayBeatTransition
 // ---------------------------------------------------------------------------
 
