@@ -76,7 +76,7 @@ void ArchetypeMgr::LoadFromDB()
     QueryResult beats = WorldDatabase.Query(
         "SELECT archetype_id, beat_number, display_id, zone_id, mechanic, "
         "transition_type, transition_value, text_greeting, text_chase, "
-        "emote_on_arrive, emote_on_complete, reward_pool, "
+        "reward_pool, "
         "spawn_style, prop_entry, prop_count, prop_radius, "
         "emotion, emotion_end, text_on_accept, text_on_complete, "
         "item_prereq_class, item_prereq_subclass, item_consume, "
@@ -103,33 +103,31 @@ void ArchetypeMgr::LoadFromDB()
             beat.transitionValue = f[6].Get<uint16>();
             beat.textGreeting    = f[7].Get<std::string>();
             beat.textChase       = f[8].Get<std::string>();
-            beat.emoteOnArrive   = f[9].Get<int16>();
-            beat.emoteOnComplete = f[10].Get<int16>();
-            beat.rewardPool      = f[11].Get<std::string>();
-            beat.spawnStyle      = f[12].Get<std::string>();
-            beat.propEntry       = f[13].Get<uint32>();
-            beat.propCount       = f[14].Get<uint8>();
-            beat.propRadius      = f[15].Get<float>();
-            beat.emotion         = f[16].Get<std::string>();
-            beat.emotionEnd      = f[17].Get<std::string>();
-            beat.textOnAccept    = f[18].Get<std::string>();
-            beat.textOnComplete  = f[19].Get<std::string>();
-            beat.itemPrereqClass    = f[20].Get<uint8>();
-            beat.itemPrereqSubclass = f[21].Get<uint8>();
-            beat.itemConsume        = f[22].Get<uint8>();
-            beat.costGoldPercent    = f[23].Get<uint8>();
-            beat.costHpPercent      = f[24].Get<uint8>();
-            beat.mechanicPassive           = f[25].Get<uint8>();
-            beat.choiceSuccessTransition   = f[26].Get<uint8>();
-            beat.choiceFailTransition      = f[27].Get<uint8>();
-            beat.entryAnimation            = f[28].Get<std::string>();
-            beat.exitAnimation             = f[29].Get<std::string>();
-            beat.entrySpell                = f[30].Get<uint32>();
-            beat.exitSpell                 = f[31].Get<uint32>();
-            beat.auraSpell                 = f[32].Get<uint32>();
-            beat.fightThreshold            = f[33].Get<uint8>();
-            beat.castSchool                = f[34].Get<uint8>();
-            beat.npcLevelOffset            = f[35].Get<int8>();
+            beat.rewardPool      = f[9].Get<std::string>();
+            beat.spawnStyle      = f[10].Get<std::string>();
+            beat.propEntry       = f[11].Get<uint32>();
+            beat.propCount       = f[12].Get<uint8>();
+            beat.propRadius      = f[13].Get<float>();
+            beat.emotion         = f[14].Get<std::string>();
+            beat.emotionEnd      = f[15].Get<std::string>();
+            beat.textOnAccept    = f[16].Get<std::string>();
+            beat.textOnComplete  = f[17].Get<std::string>();
+            beat.itemPrereqClass    = f[18].Get<uint8>();
+            beat.itemPrereqSubclass = f[19].Get<uint8>();
+            beat.itemConsume        = f[20].Get<uint8>();
+            beat.costGoldPercent    = f[21].Get<uint8>();
+            beat.costHpPercent      = f[22].Get<uint8>();
+            beat.mechanicPassive           = f[23].Get<uint8>();
+            beat.choiceSuccessTransition   = f[24].Get<uint8>();
+            beat.choiceFailTransition      = f[25].Get<uint8>();
+            beat.entryAnimation            = f[26].Get<std::string>();
+            beat.exitAnimation             = f[27].Get<std::string>();
+            beat.entrySpell                = f[28].Get<uint32>();
+            beat.exitSpell                 = f[29].Get<uint32>();
+            beat.auraSpell                 = f[30].Get<uint32>();
+            beat.fightThreshold            = f[31].Get<uint8>();
+            beat.castSchool                = f[32].Get<uint8>();
+            beat.npcLevelOffset            = f[33].Get<int8>();
 
             auto it = _idIndex.find(beat.archetypeId);
             if (it != _idIndex.end())

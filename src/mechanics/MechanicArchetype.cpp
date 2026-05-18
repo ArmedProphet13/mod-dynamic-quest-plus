@@ -19,6 +19,7 @@
 #include "DQNPCBuilder.h"
 #include "DQSpawnSystem.h"
 #include "DynamicQuestMgr.h"
+#include "MechanicUtils.h"
 #include "Creature.h"
 #include "DatabaseEnv.h"
 #include "Field.h"
@@ -112,8 +113,12 @@ void MechanicArchetype::AdvanceBeat(Player* player, InteractionInstance& inst)
                 break;
 
             case DQ_PATTERN_BRANCHING:
-                // inst.choiceIndex 0-3: jump to beat choiceIndex+2
-                nextBeat = static_cast<uint8>(inst.choiceIndex) + 2;
+                if (currentBeat == 1)
+                    // Branch point: route to the chosen outcome beat
+                    nextBeat = static_cast<uint8>(inst.choiceIndex) + 2;
+                else
+                    // Terminal outcome beat: complete the archetype
+                    nextBeat = static_cast<uint8>(def->totalBeats) + 1;
                 break;
         }
     }
@@ -150,24 +155,24 @@ void MechanicArchetype::CompleteBeat(Player* player, InteractionInstance& inst)
     {
         Creature* courier = player->GetMap()->GetCreature(inst.courierGuid);
 
-        // Legacy single-emote override (non-zero emoteOnComplete bypasses emotion system)
-        if (beat->emoteOnComplete != 0 && courier)
-            courier->HandleEmoteCommand(static_cast<Emote>(beat->emoteOnComplete));
-        else if (courier)
+        if (courier)
         {
-            // Resolve emotion_end → play first step of its onComplete sequence
-            std::string resName = beat->emotionEnd.empty()
-                ? sDQEmotions->GetDefaultResolution(beat->emotion)
-                : beat->emotionEnd;
-            if (!resName.empty())
-                if (const DQEmotionDef* res = sDQEmotions->GetResolution(resName))
-                    if (!res->onComplete.empty() && res->onComplete[0].emote != 0)
-                        courier->HandleEmoteCommand(static_cast<Emote>(res->onComplete[0].emote));
+            // emotion_end names the emotion whose opener fires on completion.
+            // If empty, fall back to the beat's own emotion (same opener as greeting).
+            const std::string& endName = beat->emotionEnd.empty() ? beat->emotion : beat->emotionEnd;
+            if (!endName.empty())
+                if (const DQEmotionDef* endDef = sDQEmotions->GetEmotion(endName))
+                    if (endDef->openerEmote != 0)
+                        courier->HandleEmoteCommand(static_cast<Emote>(endDef->openerEmote));
         }
 
         // text_on_complete say (fires after resolution emote)
         if (!beat->textOnComplete.empty() && courier)
             courier->Say(beat->textOnComplete, LANG_UNIVERSAL);
+
+        // Deliver reward for this beat
+        if (!inst.rewardPool.empty())
+            DQMechanicUtils::DeliverReward(player, inst.rewardPool, player->GetLevel());
     }
 
     AdvanceBeat(player, inst);
@@ -219,10 +224,6 @@ void MechanicArchetype::OnStart(Player* player, Creature* courier, InteractionIn
     // Model override per beat (Descent archetype: each beat shows worsening state)
     if (beat->displayId != 0)
         courier->SetDisplayId(beat->displayId);
-
-    // Arrive emote
-    if (beat->emoteOnArrive != 0)
-        courier->HandleEmoteCommand(static_cast<uint32>(beat->emoteOnArrive));
 
     // Greeting text
     if (!beat->textGreeting.empty())

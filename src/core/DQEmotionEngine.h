@@ -1,19 +1,10 @@
 /*
  * DynamicQuests+ Module
- * System 4: Emotion/Emote Engine
+ * Emotion Engine v9 — unified 4-slot model
  *
- * Brings archetype courier NPCs to life through intelligent, timed emote
- * sequences tied to emotional states. Authors write one emotion string in SQL;
- * the engine handles all timing, looping, context switching, and resolution.
- *
- * Two registries (loaded once at startup):
- *   _emotions    — 20 primary states (sad, urgent, reverent, ...) with sequences
- *                  for each of 5 context moments + pacing behaviour + decline reaction
- *   _resolutions — 10 resolution states (relieved, triumphant, ...) with onComplete
- *                  sequence played when a beat finishes
- *
- * DQEmoteSequencer is a lightweight queue owned by value inside DQ_CourierCreatureAI.
- * It fires one-shot emotes in order with per-step delays, driven by UpdateAI diff ticks.
+ * Author writes emotion = 'happy' on a beat; the engine resolves four emote IDs
+ * (opener, talk, emotion_emote, close) loaded from the dq_emotion table.
+ * DQ_CourierAI drives all timing automatically — no author input beyond the name.
  */
 
 #ifndef DQ_EMOTION_ENGINE_H
@@ -63,41 +54,20 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// DQEmotionDef — full descriptor for one emotion or resolution state
+// DQEmotionDef — 4-slot emotion descriptor loaded from dq_emotion
 // ---------------------------------------------------------------------------
 
 struct DQEmotionDef
 {
     std::string name;
-
-    // Sequences for each context moment (primary emotions)
-    std::vector<DQEmoteStep> onArrive;          // plays once when NPC stops at player
-    std::vector<DQEmoteStep> onIdle;            // loops in DCP_ARRIVED while waiting
-    std::vector<DQEmoteStep> onGossipOpen;      // plays 800ms after gossip menu opens
-    std::vector<DQEmoteStep> onAccept;          // plays when player accepts
-
-    // Decline reactions — which one fires depends on declineCategory
-    std::vector<DQEmoteStep> onDeclineHurt;
-    std::vector<DQEmoteStep> onDeclineFrustrated;
-    std::vector<DQEmoteStep> onDeclineDignified;
-
-    // Resolution sequence (resolution states only — plays on beat complete)
-    std::vector<DQEmoteStep> onComplete;
-
-    // Pacing behaviour (anxious/urgent/angry/etc. NPCs walk while waiting)
-    bool  paces      = false;
-    float paceRadius = 5.0f;
-
-    // Default resolution if emotion_end is blank in the beat data
-    std::string defaultResolution;
-
-    // Which decline sequence category this emotion maps to
-    // "hurt" | "frustrated" | "dignified"
-    std::string declineCategory;
+    uint32 openerEmote  = 0;   // fires when NPC stops at player (after MoveFollow ends)
+    uint32 talkEmote    = 0;   // step 1 of the talk/emotion loop (fires when gossip opens)
+    uint32 emotionEmote = 0;   // step 2 of the talk/emotion loop
+    uint32 closeEmote   = 0;   // fires when player accepts or declines
 };
 
 // ---------------------------------------------------------------------------
-// DQEmotionEngine — singleton registry, initialised once at startup
+// DQEmotionEngine — singleton registry, loaded from DB at startup
 // ---------------------------------------------------------------------------
 
 class DQEmotionEngine
@@ -105,25 +75,20 @@ class DQEmotionEngine
 public:
     static DQEmotionEngine* instance();
 
-    // Called from DynamicQuestMgr::Initialize() — registers all emotion defs.
-    void Initialize();
+    // Called from DynamicQuestMgr::Initialize() — loads rows from dq_emotion.
+    void LoadFromDB();
 
-    // Look up a primary emotion by name (e.g. "sad", "urgent").
-    // Returns nullptr if name is unknown.
+    // Look up an emotion by name (e.g. "happy", "angry").
+    // Returns nullptr if the name is unknown.
     const DQEmotionDef* GetEmotion(const std::string& name) const;
 
-    // Look up a resolution state by name (e.g. "relieved", "triumphant").
-    // Used by MechanicArchetype::CompleteBeat to fire the completion emote.
-    const DQEmotionDef* GetResolution(const std::string& name) const;
-
-    // Returns the auto-resolution name for an emotion when emotion_end is blank.
-    // e.g. "sad" → "relieved".  Unknown emotion returns empty string.
-    std::string GetDefaultResolution(const std::string& emotion) const;
+    // Returns the WoW 3.3.5a client duration in ms for a given emote ID.
+    // Used to arm timers without storing durations in the DB.
+    static uint32 GetEmoteDuration(uint32 emoteId);
 
 private:
     DQEmotionEngine() = default;
     std::unordered_map<std::string, DQEmotionDef> _emotions;
-    std::unordered_map<std::string, DQEmotionDef> _resolutions;
 };
 
 #define sDQEmotions DQEmotionEngine::instance()

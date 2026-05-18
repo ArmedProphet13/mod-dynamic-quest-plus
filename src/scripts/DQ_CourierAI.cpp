@@ -3,22 +3,16 @@
  *
  * Phases:
  *   DCP_APPROACHING — MoveFollow toward summoner player; stops at 3y
- *   DCP_ARRIVED     — Stopped, facing player. Plays emotion sequences. 120s timeout.
+ *   DCP_ARRIVED     — Stopped, facing player. Drives talk/emotion loop. 120s timeout.
  *   DCP_ACCEPTED    — Player accepted; mechanic running (AI stays alive for cleanup).
  *
- * Emotion system (System 4):
- *   At DCP_ARRIVED the AI reads beat->emotion from ArchetypeMgr, resolves a
- *   DQEmotionDef, and drives a DQEmoteSequencer through five context moments:
- *     on_arrive   — plays once when NPC stops
- *     on_idle     — loops until gossip or accept
- *     on_gossip   — plays 800ms after player opens gossip menu
- *     on_accept   — plays when player accepts; suppresses idle
- *     on_decline  — plays when player declines (category: hurt/frustrated/dignified)
- *   Pacing emotions (anxious, urgent, angry, …) walk to random nearby points.
+ * Emote system (v9 — unified 4-slot):
+ *   opener     — fires when NPC stops at player (openerEmote)
+ *   talk loop  — talkEmote → emotionEmote → talkEmote → ... while gossip is open
+ *   close      — fires at the next step boundary after player responds
  *
- * Invisible spawn styles (from_portal, from_shadow): SetVisible(false) is applied
- * by SpawnWithStyle before the summon enters the world. InitializeAI detects this
- * and arms _revealTimer; the AI reveals itself and begins MoveFollow after 900ms.
+ * Step-boundary interrupt rule: player response sets _closePending.
+ * Close fires when the current step timer expires naturally — never mid-animation.
  */
 
 #include "ArchetypeMgr.h"
@@ -38,13 +32,11 @@
 #include "ScriptedGossip.h"
 #include "ScriptMgr.h"
 #include "TemporarySummon.h"
-#include <cmath>
 
 // Searches main bag and equipped bags for the first item matching itemClass/itemSubclass.
 // itemSubclass == 0 matches any subclass. Returns nullptr if nothing found.
 static Item* FindItemByClassSubclass(Player* player, uint8 itemClass, uint8 itemSubclass)
 {
-    // Main backpack
     for (uint8 i = INVENTORY_SLOT_ITEM_START; i < INVENTORY_SLOT_ITEM_END; ++i)
     {
         Item* item = player->GetItemByPos(NULL_BAG, i);
@@ -53,7 +45,6 @@ static Item* FindItemByClassSubclass(Player* player, uint8 itemClass, uint8 item
         if (tmpl->Class == itemClass && (itemSubclass == 0 || tmpl->SubClass == itemSubclass))
             return item;
     }
-    // Equipped bag slots
     for (uint8 b = INVENTORY_SLOT_BAG_START; b < INVENTORY_SLOT_BAG_END; ++b)
     {
         Bag* bag = player->GetBagByPos(b);
@@ -70,11 +61,9 @@ static Item* FindItemByClassSubclass(Player* player, uint8 itemClass, uint8 item
     return nullptr;
 }
 
-// DQ_COURIER_SENDER, DQ_GOSSIP_DECLINE come from DQDialogueMgr.h
-static constexpr float  ARRIVE_DIST         = 3.0f;
-static constexpr uint32 REVEAL_DELAY_MS     = 900;     // invisible spawn → visible after this ms
-static constexpr uint32 GOSSIP_EMOTE_DELAY  = 800;     // ms after gossip opens before emote fires
-static constexpr uint32 DECLINE_DESPAWN_MS  = 4000;    // ms before courier despawns after decline
+static constexpr float  ARRIVE_DIST        = 3.0f;
+static constexpr uint32 REVEAL_DELAY_MS    = 900;    // invisible spawn → visible after this ms
+static constexpr uint32 DECLINE_DESPAWN_MS = 4000;   // ms before courier despawns after decline
 
 enum DCPhase : uint8
 {
@@ -92,17 +81,20 @@ public:
         : ScriptedAI(c)
         , _phase(DCP_APPROACHING)
         , _revealTimer(0)
-        , _idleLooping(false)
-        , _gossipDelay(0)
-        , _paceTimer(0)
         , _emotionDef(nullptr)
+        , _talkLooping(false)
+        , _talkPhase(false)
+        , _closePending(false)
+        , _gossipOpenTimer(0)
+        , _talkStepTimer(0)
+        , _closeTimer(0)
     {}
 
     void InitializeAI() override
     {
         me->SetReactState(REACT_PASSIVE);
         me->SetUInt32Value(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
-        me->SetNpcFlag(UNIT_NPC_FLAG_GOSSIP); // ensure client sends CMSG_GOSSIP_HELLO, not CMSG_QUESTGIVER_HELLO
+        me->SetNpcFlag(UNIT_NPC_FLAG_GOSSIP);
 
         Player* player = SummonerPlayer();
         if (!player)
@@ -113,7 +105,6 @@ public:
 
         me->SetLevel(player->GetLevel());
 
-        // Resolve emotion from the active beat
         if (IsArchetypeId(sDQMgr->GetActiveTemplateId(player)))
         {
             if (const InteractionInstance* inst = sDQMgr->GetActiveInst(player))
@@ -127,7 +118,6 @@ public:
 
         if (!me->IsVisible())
         {
-            // Invisible spawn (from_portal / from_shadow): arm reveal timer
             _revealTimer = REVEAL_DELAY_MS;
         }
         else
@@ -145,7 +135,6 @@ public:
             return;
         }
 
-        // Invisible reveal sequence
         if (_revealTimer)
         {
             if (_revealTimer <= diff)
@@ -160,9 +149,6 @@ public:
                 return;
             }
         }
-
-        // Emote sequencer ticks regardless of phase (handles accept/decline emotes too)
-        _sequencer.Tick(me, diff);
 
         switch (_phase)
         {
@@ -183,50 +169,24 @@ public:
             return;
         }
 
-        _idleLooping = false;
-        _gossipDelay = GOSSIP_EMOTE_DELAY;
-
-        uint32 templateId = sDQMgr->GetActiveTemplateId(player);
-        DQ_LOG_INFO(DQ_LOG_CAT_SESSION, player, "GossipHello: templateId={} isArchetype={}", templateId, IsArchetypeId(templateId));
-
-        if (!IsArchetypeId(templateId))
+        // Cancel pending timer and open immediately
+        if (_gossipOpenTimer > 0)
         {
-            DQ_LOG_INFO(DQ_LOG_CAT_SESSION, player, "GossipHello: SKIP — templateId not an archetype");
-            CloseGossipMenuFor(player);
+            _gossipOpenTimer = 0;
+            OpenGossipNow(player);
             return;
         }
 
-        const InteractionInstance* inst = sDQMgr->GetActiveInst(player);
-        DQ_LOG_INFO(DQ_LOG_CAT_SESSION, player, "GossipHello: inst={} phase={}", inst ? "valid" : "null",
-            inst ? static_cast<int>(inst->currentPhase) : -1);
-
-        if (!inst)
+        // Loop already running — re-open gossip without restarting the loop
+        if (_talkLooping)
         {
-            CloseGossipMenuFor(player);
+            ReopenGossip(player);
             return;
         }
-
-        uint32 archetypeId = DecodeArchetypeId(templateId);
-        const ArchetypeDef*  def  = sArchetypeMgr->Get(archetypeId);
-        const ArchetypeBeat* beat = sArchetypeMgr->GetBeat(archetypeId, inst->currentPhase);
-        DQ_LOG_INFO(DQ_LOG_CAT_SESSION, player, "GossipHello: archetypeId={} def={} beat={}",
-            archetypeId, def ? "valid" : "null", beat ? "valid" : "null");
-
-        if (!def || !beat)
-        {
-            DQ_LOG_INFO(DQ_LOG_CAT_SESSION, player, "GossipHello: SKIP — def or beat not found");
-            CloseGossipMenuFor(player);
-            return;
-        }
-
-        DQ_LOG_INFO(DQ_LOG_CAT_SESSION, player, "GossipHello: opening session");
-        DQClientSession::Open(player, me, *def, *beat,
-            sDQMgr->PendingSession(player), sDQMgr->cfg_courierTimeoutMs);
     }
 
     bool HandleGossipSelect(Player* player, Creature* creature, uint32 action)
     {
-        // Validate the response against the session we opened.
         DQPendingSession& sess = sDQMgr->PendingSession(player);
         if (!DQClientSession::Validate(player, creature, sess))
             return false;
@@ -234,40 +194,20 @@ public:
 
         CloseGossipMenuFor(player);
 
+        // Both paths: mark close pending so loop fires close emote at next step boundary
+        _closePending = true;
+
         if (action == DQ_GOSSIP_DECLINE)
         {
-            _idleLooping = false;
-            _paceTimer   = 0;
-
-            if (_emotionDef)
-            {
-                const std::vector<DQEmoteStep>* seq = nullptr;
-                if (_emotionDef->declineCategory == "hurt")
-                    seq = &_emotionDef->onDeclineHurt;
-                else if (_emotionDef->declineCategory == "frustrated")
-                    seq = &_emotionDef->onDeclineFrustrated;
-                else
-                    seq = &_emotionDef->onDeclineDignified;
-
-                if (seq && !seq->empty())
-                    _sequencer.Play(*seq);
-            }
-
             me->DespawnOrUnsummon(Milliseconds(DECLINE_DESPAWN_MS));
             sDQMgr->OnInteractionDeclined(player);
             return true;
         }
 
-        // Accept path: action == 0 for all non-branching mechanics,
-        // or 0-3 as choice index for BRANCHING pattern beats.
-        _phase       = DCP_ACCEPTED;
-        _idleLooping = false;
-        _paceTimer   = 0;
+        // Accept path
+        _phase = DCP_ACCEPTED;
         me->GetMotionMaster()->Clear();
         me->SetFacingToObject(player);
-
-        if (_emotionDef && !_emotionDef->onAccept.empty())
-            _sequencer.Play(_emotionDef->onAccept);
 
         uint32 templateId = sDQMgr->GetActiveTemplateId(player);
         if (IsArchetypeId(templateId))
@@ -281,7 +221,6 @@ public:
                     if (!beat->textOnAccept.empty())
                         me->Say(beat->textOnAccept, LANG_UNIVERSAL);
 
-                    // Consume one matching item when the COURIER mechanic requires it.
                     if (beat->itemConsume && beat->itemPrereqClass != 0)
                     {
                         Item* donated = FindItemByClassSubclass(
@@ -293,7 +232,6 @@ public:
             }
         }
 
-        // Pass action through so BRANCHING mechanics receive the correct choice index.
         sDQMgr->OnInteractionAccepted(player, templateId, action);
         return true;
     }
@@ -310,11 +248,13 @@ public:
 private:
     DCPhase             _phase;
     uint32              _revealTimer;
-    DQEmoteSequencer    _sequencer;
-    bool                _idleLooping;
-    uint32              _gossipDelay;
-    uint32              _paceTimer;
     const DQEmotionDef* _emotionDef;
+    bool                _talkLooping;    // loop is running while gossip is open
+    bool                _talkPhase;      // false = play talkEmote next; true = play emotionEmote next
+    bool                _closePending;   // player responded; fire close at next step boundary
+    uint32              _gossipOpenTimer; // fires after openerEmote duration + 200ms
+    uint32              _talkStepTimer;  // countdown for current talk/emotion step
+    uint32              _closeTimer;     // countdown after close emote fires (accept path)
 
     void TickApproaching(Player* player, uint32 /*diff*/)
     {
@@ -323,89 +263,122 @@ private:
 
         me->GetMotionMaster()->Clear();
         me->SetFacingToObject(player);
-
         _phase = DCP_ARRIVED;
 
-        // OnCourierArrived → MechanicArchetype::OnStart: caches inst state, greeting.
         sDQMgr->OnCourierArrived(player, me);
 
-        // Proactive push: open the gossip window without requiring right-click.
+        if (_emotionDef && _emotionDef->openerEmote != 0)
         {
-            uint32 templateId = sDQMgr->GetActiveTemplateId(player);
-            if (IsArchetypeId(templateId))
-            {
-                if (const InteractionInstance* inst = sDQMgr->GetActiveInst(player))
-                {
-                    uint32 archetypeId = DecodeArchetypeId(templateId);
-                    const ArchetypeDef*  def  = sArchetypeMgr->Get(archetypeId);
-                    const ArchetypeBeat* beat = sArchetypeMgr->GetBeat(archetypeId, inst->currentPhase);
-                    if (def && beat)
-                    {
-                        _idleLooping = false;
-                        _gossipDelay = GOSSIP_EMOTE_DELAY;
-                        DQClientSession::Open(player, me, *def, *beat,
-                            sDQMgr->PendingSession(player), sDQMgr->cfg_courierTimeoutMs);
-                    }
-                }
-            }
+            me->HandleEmoteCommand(static_cast<Emote>(_emotionDef->openerEmote));
+            _gossipOpenTimer = DQEmotionEngine::GetEmoteDuration(_emotionDef->openerEmote) + 200;
         }
-
-        // Start arrive emote sequence; arm idle loop for when it finishes
-        if (_emotionDef && !_emotionDef->onArrive.empty())
+        else
         {
-            _sequencer.Play(_emotionDef->onArrive);
-            _idleLooping = true;
+            _gossipOpenTimer = 1200;
         }
-
-        // Arm pacing if this emotion paces
-        if (_emotionDef && _emotionDef->paces)
-            _paceTimer = 2000u + uint32(rand() % 2001); // first pace 2-4s after arrival
     }
 
     void TickArrived(Player* player, uint32 diff)
     {
-        // Restart idle loop when arrive (or previous idle) finishes
-        if (_idleLooping && !_sequencer.IsPlaying() && _emotionDef && !_emotionDef->onIdle.empty())
+        // Block A — gossip open timer
+        if (_gossipOpenTimer > 0)
         {
-            _sequencer.Play(_emotionDef->onIdle);
-        }
-
-        // Gossip-open emote countdown (armed by HandleGossipHello)
-        if (_gossipDelay > 0)
-        {
-            if (_gossipDelay <= diff)
+            if (_gossipOpenTimer <= diff)
             {
-                _gossipDelay = 0;
-                if (_emotionDef && !_emotionDef->onGossipOpen.empty())
-                    _sequencer.Play(_emotionDef->onGossipOpen);
+                _gossipOpenTimer = 0;
+                OpenGossipNow(player);
             }
             else
-            {
-                _gossipDelay -= diff;
-            }
+                _gossipOpenTimer -= diff;
         }
 
-        // Pacing — pick a random nearby point and walk to it
-        if (_paceTimer > 0 && _emotionDef && _emotionDef->paces)
+        // Block B — talk/emotion loop
+        if (_talkLooping && _talkStepTimer > 0)
         {
-            if (_paceTimer <= diff)
+            if (_talkStepTimer <= diff)
             {
-                _paceTimer = 4000u + uint32(rand() % 4001); // next pace 4-8s later
-                float angle = float(rand()) / float(RAND_MAX) * 2.0f * float(M_PI);
-                float dist  = float(rand()) / float(RAND_MAX) * _emotionDef->paceRadius;
-                float px    = me->GetPositionX() + dist * std::cos(angle);
-                float py    = me->GetPositionY() + dist * std::sin(angle);
-                me->GetMotionMaster()->MovePoint(1, px, py, me->GetPositionZ());
+                _talkStepTimer = 0;
+                if (_closePending)
+                {
+                    _talkLooping  = false;
+                    _closePending = false;
+                    if (_emotionDef && _emotionDef->closeEmote != 0)
+                    {
+                        me->HandleEmoteCommand(static_cast<Emote>(_emotionDef->closeEmote));
+                        _closeTimer = DQEmotionEngine::GetEmoteDuration(_emotionDef->closeEmote);
+                    }
+                }
+                else if (_emotionDef)
+                {
+                    _talkPhase     = !_talkPhase;
+                    uint32 emote   = _talkPhase ? _emotionDef->emotionEmote : _emotionDef->talkEmote;
+                    if (emote != 0)
+                        me->HandleEmoteCommand(static_cast<Emote>(emote));
+                    _talkStepTimer = DQEmotionEngine::GetEmoteDuration(emote ? emote : 1);
+                }
             }
             else
-            {
-                _paceTimer -= diff;
-            }
+                _talkStepTimer -= diff;
         }
 
-        // Face back toward player after each pace completes (approximate: face if standing still)
-        if (_emotionDef && _emotionDef->paces && !me->isMoving())
-            me->SetFacingToObject(player);
+        // Block C — close timer (accept path; NPC despawned externally by mechanic)
+        if (_closeTimer > 0)
+        {
+            if (_closeTimer <= diff)
+                _closeTimer = 0;
+            else
+                _closeTimer -= diff;
+        }
+    }
+
+    // Opens gossip, fires talkEmote, starts the loop.
+    void OpenGossipNow(Player* player)
+    {
+        uint32 templateId = sDQMgr->GetActiveTemplateId(player);
+        if (!IsArchetypeId(templateId))
+            return;
+
+        const InteractionInstance* inst = sDQMgr->GetActiveInst(player);
+        if (!inst)
+            return;
+
+        uint32 archetypeId           = DecodeArchetypeId(templateId);
+        const ArchetypeDef*  def     = sArchetypeMgr->Get(archetypeId);
+        const ArchetypeBeat* beat    = sArchetypeMgr->GetBeat(archetypeId, inst->currentPhase);
+        if (!def || !beat)
+            return;
+
+        DQClientSession::Open(player, me, *def, *beat,
+            sDQMgr->PendingSession(player), sDQMgr->cfg_courierTimeoutMs);
+
+        uint32 talkEmote = _emotionDef ? _emotionDef->talkEmote : 0;
+        if (talkEmote != 0)
+            me->HandleEmoteCommand(static_cast<Emote>(talkEmote));
+
+        _talkStepTimer = DQEmotionEngine::GetEmoteDuration(talkEmote ? talkEmote : 1);
+        _talkLooping   = true;
+        _talkPhase     = false; // we just fired talk; next toggle → emotionEmote
+    }
+
+    // Re-opens the gossip menu without restarting the emote loop.
+    void ReopenGossip(Player* player)
+    {
+        uint32 templateId = sDQMgr->GetActiveTemplateId(player);
+        if (!IsArchetypeId(templateId))
+        { CloseGossipMenuFor(player); return; }
+
+        const InteractionInstance* inst = sDQMgr->GetActiveInst(player);
+        if (!inst)
+        { CloseGossipMenuFor(player); return; }
+
+        uint32 archetypeId        = DecodeArchetypeId(templateId);
+        const ArchetypeDef*  def  = sArchetypeMgr->Get(archetypeId);
+        const ArchetypeBeat* beat = sArchetypeMgr->GetBeat(archetypeId, inst->currentPhase);
+        if (def && beat)
+            DQClientSession::Open(player, me, *def, *beat,
+                sDQMgr->PendingSession(player), sDQMgr->cfg_courierTimeoutMs);
+        else
+            CloseGossipMenuFor(player);
     }
 
     void Abort()

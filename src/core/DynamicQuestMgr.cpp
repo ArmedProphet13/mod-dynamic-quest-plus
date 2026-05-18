@@ -70,7 +70,7 @@ DynamicQuestMgr* DynamicQuestMgr::instance()
 void DynamicQuestMgr::Initialize()
 {
     LoadConfig();
-    sDQEmotions->Initialize();
+    sDQEmotions->LoadFromDB();
     sDQContext->Initialize();
     sWorldCatalogue->LoadFromDB();
     sArchetypeMgr->LoadFromDB();

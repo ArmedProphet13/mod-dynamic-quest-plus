@@ -65,8 +65,6 @@ struct ArchetypeBeat
     uint16           transitionValue = 1;   // N for encounter_count; seconds for timer
     std::string      textGreeting;          // NPC opening line on spawn
     std::string      textChase;             // NPC line when player walks away
-    int16            emoteOnArrive   = 0;   // emote played immediately on spawn (0 = none)
-    int16            emoteOnComplete = 0;   // emote played when beat completes (0 = none)
     std::string      rewardPool;            // dq_reward_pool.pool_name; empty = no reward
     // System 1: Spawn Style
     std::string      spawnStyle      = "approaches"; // how the courier enters the scene
