@@ -107,18 +107,14 @@ void DQDialogueMgr::BuildBeatMenu(Player* player,
 
     ClearGossipMenuFor(player);
 
-    if (def.pattern == DQ_PATTERN_BRANCHING)
+    if (def.pattern == DQ_PATTERN_BRANCHING && beat.beatNumber == 1)
     {
-        // Each beat after the current one is a branch; its textGreeting labels the button.
-        uint8 choiceIdx = 0;
-        for (const ArchetypeBeat& b : def.beats)
-        {
-            if (b.beatNumber <= beat.beatNumber || choiceIdx >= 4)
-                continue;
-            const char* label = b.textGreeting.empty() ? "..." : b.textGreeting.c_str();
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, label, DQ_COURIER_SENDER, choiceIdx);
-            ++choiceIdx;
-        }
+        // Branch point: textOnAccept = choice 0 label, textOnComplete = choice 1 label.
+        // These are authored on the branch beat itself, not on the outcome beats.
+        const char* label0 = beat.textOnAccept.empty()  ? "Yes." : beat.textOnAccept.c_str();
+        const char* label1 = beat.textOnComplete.empty() ? "No."  : beat.textOnComplete.c_str();
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, label0, DQ_COURIER_SENDER, 0);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, label1, DQ_COURIER_SENDER, 1);
     }
     else if (beat.mechanicPassive == 0)
     {

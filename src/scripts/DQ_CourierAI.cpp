@@ -83,7 +83,7 @@ public:
         , _revealTimer(0)
         , _emotionDef(nullptr)
         , _talkLooping(false)
-        , _talkPhase(false)
+        , _talkPhase(0)
         , _closePending(false)
         , _gossipOpenTimer(0)
         , _talkStepTimer(0)
@@ -105,7 +105,9 @@ public:
 
         me->SetLevel(player->GetLevel());
 
-        if (IsArchetypeId(sDQMgr->GetActiveTemplateId(player)))
+        uint32 templateId = sDQMgr->GetActiveTemplateId(player);
+
+        if (IsArchetypeId(templateId))
         {
             if (const InteractionInstance* inst = sDQMgr->GetActiveInst(player))
             {
@@ -250,7 +252,7 @@ private:
     uint32              _revealTimer;
     const DQEmotionDef* _emotionDef;
     bool                _talkLooping;    // loop is running while gossip is open
-    bool                _talkPhase;      // false = play talkEmote next; true = play emotionEmote next
+    uint8               _talkPhase;      // 0,1 = talkEmote; 2 = emotionEmote (talk-talk-emotion cycle)
     bool                _closePending;   // player responded; fire close at next step boundary
     uint32              _gossipOpenTimer; // fires after openerEmote duration + 200ms
     uint32              _talkStepTimer;  // countdown for current talk/emotion step
@@ -310,8 +312,8 @@ private:
                 }
                 else if (_emotionDef)
                 {
-                    _talkPhase     = !_talkPhase;
-                    uint32 emote   = _talkPhase ? _emotionDef->emotionEmote : _emotionDef->talkEmote;
+                    _talkPhase     = (_talkPhase + 1) % 3;
+                    uint32 emote   = (_talkPhase == 2) ? _emotionDef->emotionEmote : _emotionDef->talkEmote;
                     if (emote != 0)
                         me->HandleEmoteCommand(static_cast<Emote>(emote));
                     _talkStepTimer = DQEmotionEngine::GetEmoteDuration(emote ? emote : 1);
@@ -357,7 +359,7 @@ private:
 
         _talkStepTimer = DQEmotionEngine::GetEmoteDuration(talkEmote ? talkEmote : 1);
         _talkLooping   = true;
-        _talkPhase     = false; // we just fired talk; next toggle → emotionEmote
+        _talkPhase     = 0; // just fired talk (slot 0); next step → slot 1 (talk), then slot 2 (emotion)
     }
 
     // Re-opens the gossip menu without restarting the emote loop.

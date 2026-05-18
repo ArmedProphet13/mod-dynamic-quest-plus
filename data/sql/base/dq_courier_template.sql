@@ -44,14 +44,15 @@ VALUES
 
 -- Display IDs for dedicated entries (creature_template_model replaces old modelid column).
 -- IDs sourced from verified creature_template_model rows in the base DB.
-INSERT IGNORE INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`)
+DELETE FROM `creature_template_model` WHERE `CreatureID` IN (900001, 900002, 900003, 900004, 900005, 900011, 900012, 900013);
+INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`)
 VALUES
 (900001, 0, 2575,  1.0, 1.0),  -- Succubus / demoness appearance
 (900002, 0,  221,  1.0, 1.0),  -- Human boy (child)
 (900003, 0, 4041,  1.0, 1.0),  -- Forsaken humanoid (undead)
-(900004, 0,   87,  1.0, 1.0),  -- Peasant (generic human)
+(900004, 0, 2594,  1.0, 1.0),  -- Human male (confirmed emote support)
 (900005, 0,  179,  1.0, 1.0),  -- Kodo Beast (nature)
-(900011, 0,   87,  1.0, 1.0),  -- Peasant (trader destination)
+(900011, 0, 2594,  1.0, 1.0),  -- Human male (trader destination)
 (900012, 0,  221,  1.0, 1.0),  -- Boy (child destination)
 (900013, 0, 3167,  1.0, 1.0);  -- Stormwind City Guard (guard destination)
 

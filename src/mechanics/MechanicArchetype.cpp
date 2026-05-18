@@ -385,7 +385,19 @@ void MechanicArchetype::OnCleanup(Player* player, InteractionInstance& inst)
         sDQAnimation->RemovePersistentAura(courier, inst.auraSpell);
 
     if (courier)
-        courier->DespawnOrUnsummon(2500ms); // delay lets exit animation finish
+    {
+        uint32 despawnMs = 5000;
+        uint32 archetypeId = DecodeArchetypeId(inst.templateId);
+        const ArchetypeBeat* beat = sArchetypeMgr->GetBeat(archetypeId, inst.currentPhase);
+        if (beat && !beat->emotion.empty())
+        {
+            const std::string& endName = beat->emotionEnd.empty() ? beat->emotion : beat->emotionEnd;
+            if (const DQEmotionDef* endDef = sDQEmotions->GetEmotion(endName))
+                if (endDef->openerEmote != 0)
+                    despawnMs = DQEmotionEngine::GetEmoteDuration(endDef->openerEmote) + 3000;
+        }
+        courier->DespawnOrUnsummon(Milliseconds(despawnMs));
+    }
 
     for (ObjectGuid guid : inst.auxGuidList)
         if (GameObject* go = player->GetMap()->GetGameObject(guid))

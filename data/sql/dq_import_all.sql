@@ -437,44 +437,40 @@ VALUES
  0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, '', 'DQ_PropGO', 0);
 
 -- ===== base/dq_test_archetypes.sql =====
--- DynamicQuests+ | Test Archetypes 6-10
--- Progressive test coverage: smoke → sequential → spawn styles → branching → full system.
+-- DynamicQuests+ | Test Archetype 6 — Emote System Test
+-- Single courier beat with happy emotion. Tests all 4 emote slots in isolation.
+--
+-- Expected sequence:
+--   NPC stops  → /wave  (happy opener, emote 3)
+--   ~2200ms    → gossip opens + /talkex  (talk, emote 396)
+--   ~2000ms    → /laugh  (emotion_emote, emote 11)
+--   loop       → /talkex → /laugh → ...
+--   player accepts → /bow at next step boundary  (close, emote 2)
+--   CompleteBeat   → /bow + text_on_complete  (grateful opener = 2)
 -- All zone_id = 0 (any zone). Levels 1-80.
 
--- Reward pools -----------------------------------------------------------------
+-- Reward pool ------------------------------------------------------------------
 
-DELETE FROM `dq_reward_pool` WHERE `pool_name` IN ('trader_small','urgent_reward','stranger_reward','herald_cache');
+DELETE FROM `dq_reward_pool` WHERE `pool_name` = 'emote_test_reward';
 
 INSERT INTO `dq_reward_pool`
     (`pool_name`, `level_min`, `level_max`, `item_entry`, `gold_min_copper`, `gold_max_copper`, `xp_amount`, `weight`)
 VALUES
-    -- trader_small (archetype 7): green armor cache
-    ('trader_small',      1,  29, 900100,  3000,  10000,  400, 10),
-    ('trader_small',     30,  59, 900100,  8000,  25000, 1200, 10),
-    ('trader_small',     60,  80, 900100, 15000,  40000,    0, 10),
-    -- urgent_reward (archetype 8): green armor cache
-    ('urgent_reward',     1,  29, 900100,  5000,  15000,  600, 10),
-    ('urgent_reward',    30,  59, 900100, 12000,  30000, 1800, 10),
-    ('urgent_reward',    60,  80, 900100, 25000,  60000,    0, 10),
-    -- stranger_reward (archetype 9 accept path): blue armor cache
-    ('stranger_reward',   1,  29, 900101,  8000,  20000,  800, 10),
-    ('stranger_reward',  30,  59, 900101, 18000,  40000, 2000, 10),
-    ('stranger_reward',  60,  80, 900101, 35000,  70000,    0, 10),
-    -- herald_cache (archetype 10 full trial): purple armor cache
-    ('herald_cache',      1,  29, 900102, 10000,  25000, 1000, 10),
-    ('herald_cache',     30,  59, 900102, 20000,  50000, 2500, 10),
-    ('herald_cache',     60,  80, 900102, 40000,  80000,    0, 10);
+    ('emote_test_reward',  1,  29, 900100,  3000,  10000,  400, 10),
+    ('emote_test_reward', 30,  59, 900100,  8000,  25000, 1200, 10),
+    ('emote_test_reward', 60,  80, 900100, 15000,  40000,    0, 10);
 
--- Archetype 6: The Sentinel's Report -------------------------------------------
--- Smoke test: approaches spawn, witness, curious→content, talk+wave emotes.
+-- Archetype 12: Emote Test -----------------------------------------------------
+-- Single courier beat. Tests all 4 emote slots with happy emotion.
+-- Trigger: .dq trigger archetype 12
 
-DELETE FROM `dq_archetype`      WHERE `id` = 6;
-DELETE FROM `dq_archetype_beat` WHERE `archetype_id` = 6;
+DELETE FROM `dq_archetype`      WHERE `id` IN (6, 7, 8, 9, 10, 12);
+DELETE FROM `dq_archetype_beat` WHERE `archetype_id` IN (6, 7, 8, 9, 10, 12);
 
 INSERT INTO `dq_archetype`
     (`id`, `name`, `pattern`, `total_beats`, `zone_id`, `level_min`, `level_max`, `enabled`, `appearance`)
 VALUES
-    (6, 'The Sentinel''s Report', 'sequential', 1, 0, 1, 80, 1, 'humanoid,male');
+    (12, 'Emote Test', 'sequential', 1, 0, 1, 80, 1, 'humanoid,male');
 
 INSERT INTO `dq_archetype_beat`
     (`archetype_id`, `beat_number`, `display_id`, `zone_id`,
@@ -484,186 +480,12 @@ INSERT INTO `dq_archetype_beat`
      `spawn_style`, `prop_entry`, `prop_count`, `prop_radius`,
      `emotion`, `emotion_end`, `text_on_accept`, `text_on_complete`)
 VALUES
-(6, 1, 0, 0,
- 'witness', 'quest_complete', 1,
- 'A word, traveler. The road ahead is clear. Safe travels.',
- 'Hold on — just a moment.',
- '',
+(12, 1, 0, 0,
+ 'courier', 'encounter_count', 1,
+ 'Well met, traveler! I have something for you.',
+ 'Wait — please, just a moment!',
+ 'emote_test_reward',
  'approaches', 0, 0, 0.0,
- 'neutral', '',
- 'Understood.',
- 'The sentinel nods and returns to his post.');
-
--- Archetype 7: The Trader's Plea -----------------------------------------------
--- 2-beat sequential: roadside witness (anxious) → waiting courier (hopeful) + reward.
--- Tests: beat-to-beat transition, emotion arc, emoteOnArrive + emoteOnComplete.
-
-DELETE FROM `dq_archetype`      WHERE `id` = 7;
-DELETE FROM `dq_archetype_beat` WHERE `archetype_id` = 7;
-
-INSERT INTO `dq_archetype`
-    (`id`, `name`, `pattern`, `total_beats`, `zone_id`, `level_min`, `level_max`, `enabled`, `appearance`)
-VALUES
-    (7, 'The Trader''s Plea', 'sequential', 2, 0, 1, 80, 1, 'humanoid,male');
-
-INSERT INTO `dq_archetype_beat`
-    (`archetype_id`, `beat_number`, `display_id`, `zone_id`,
-     `mechanic`, `transition_type`, `transition_value`,
-     `text_greeting`, `text_chase`,
-     `reward_pool`,
-     `spawn_style`, `prop_entry`, `prop_count`, `prop_radius`,
-     `emotion`, `emotion_end`, `text_on_accept`, `text_on_complete`)
-VALUES
-(7, 1, 0, 0,
- 'witness', 'quest_complete', 1,
- 'Over here! Bandits hit the south road. I need someone reliable.',
- 'Please — it will only take a moment!',
- '',
- 'roadside', 0, 0, 0.0,
- 'fearful', 'victorious',
- 'Tell me what you need.',
- 'One more thing...'),
-(7, 2, 0, 0,
- 'courier', 'encounter_count', 1,
- 'Take this coin to the innkeeper at the crossroads. Tell her Aldric sent you.',
- 'I have nowhere else to turn.',
- 'trader_small',
- 'waiting', 0, 0, 0.0,
- 'pleading', 'grateful',
- 'Consider it done.',
- 'Thank you, friend. Light willing, I''ll reach the city by dawn.');
-
--- Archetype 8: The Urgent Call -------------------------------------------------
--- 1-beat courier, run_up spawn, urgent emotion, exclamation+salute emotes, chase text.
-
-DELETE FROM `dq_archetype`      WHERE `id` = 8;
-DELETE FROM `dq_archetype_beat` WHERE `archetype_id` = 8;
-
-INSERT INTO `dq_archetype`
-    (`id`, `name`, `pattern`, `total_beats`, `zone_id`, `level_min`, `level_max`, `enabled`, `appearance`)
-VALUES
-    (8, 'The Urgent Call', 'sequential', 1, 0, 1, 80, 1, 'humanoid,male');
-
-INSERT INTO `dq_archetype_beat`
-    (`archetype_id`, `beat_number`, `display_id`, `zone_id`,
-     `mechanic`, `transition_type`, `transition_value`,
-     `text_greeting`, `text_chase`,
-     `reward_pool`,
-     `spawn_style`, `prop_entry`, `prop_count`, `prop_radius`,
-     `emotion`, `emotion_end`, `text_on_accept`, `text_on_complete`)
-VALUES
-(8, 1, 0, 0,
- 'courier', 'encounter_count', 1,
- 'Traveler — no time. Take this seal to the garrison. North road. Double time.',
- 'Stop! Lives depend on this!',
- 'urgent_reward',
- 'run_up', 0, 0, 0.0,
- 'angry', 'happy',
- 'I''ll get it there.',
- 'The messenger salutes sharply and sprints away.');
-
--- Archetype 9: The Stranger's Bargain ------------------------------------------
--- 3-beat branching: from_shadow arrival, 2 gossip choices.
--- Choice 0 → beat 2 (accepted, reward). Choice 1 → beat 3 (refused, no reward).
--- Routing: nextBeat = choiceIndex + 2 (AC branching pattern math).
-
-DELETE FROM `dq_archetype`      WHERE `id` = 9;
-DELETE FROM `dq_archetype_beat` WHERE `archetype_id` = 9;
-
-INSERT INTO `dq_archetype`
-    (`id`, `name`, `pattern`, `total_beats`, `zone_id`, `level_min`, `level_max`, `enabled`, `appearance`)
-VALUES
-    (9, 'The Stranger''s Bargain', 'branching', 3, 0, 1, 80, 1, 'humanoid,male');
-
-INSERT INTO `dq_archetype_beat`
-    (`archetype_id`, `beat_number`, `display_id`, `zone_id`,
-     `mechanic`, `transition_type`, `transition_value`,
-     `text_greeting`, `text_chase`,
-     `reward_pool`,
-     `spawn_style`, `prop_entry`, `prop_count`, `prop_radius`,
-     `emotion`, `emotion_end`, `text_on_accept`, `text_on_complete`)
-VALUES
-(9, 1, 0, 0,
- 'courier', 'choice', 1,
- 'You look capable. I have a job — pays well, no questions asked. Interested?',
- 'Think carefully. Opportunities like this don''t come twice.',
- '',
- 'from_shadow', 0, 0, 0.0,
- 'neutral', '',
- 'Tell me more.',
- 'Not my problem.'),
-(9, 2, 0, 0,
- 'witness', 'quest_complete', 1,
- 'Smart choice. Here is your cut. Don''t spend it all in one place.',
- '',
- 'stranger_reward',
- 'waiting', 0, 0, 0.0,
- 'grateful', '',
- 'Pleasure doing business.',
- 'The stranger vanishes as quickly as he appeared.'),
-(9, 3, 0, 0,
- 'witness', 'quest_complete', 1,
- 'Your loss, traveler. Someone else will take the coin.',
- '',
- '',
- 'waiting', 0, 0, 0.0,
- 'angry', '',
- 'Your choice.',
- 'The stranger shrugs and disappears into the shadows.');
-
--- Archetype 10: The Herald's Trial ---------------------------------------------
--- 4-beat sequential: all 4 implemented mechanics in sequence.
--- Beat 1 witness (from_portal) → Beat 2 kill 3 → Beat 3 activate beacon → Beat 4 courier + reward.
-
-DELETE FROM `dq_archetype`      WHERE `id` = 10;
-DELETE FROM `dq_archetype_beat` WHERE `archetype_id` = 10;
-
-INSERT INTO `dq_archetype`
-    (`id`, `name`, `pattern`, `total_beats`, `zone_id`, `level_min`, `level_max`, `enabled`, `appearance`)
-VALUES
-    (10, 'The Herald''s Trial', 'sequential', 4, 0, 1, 80, 1, 'humanoid,male');
-
-INSERT INTO `dq_archetype_beat`
-    (`archetype_id`, `beat_number`, `display_id`, `zone_id`,
-     `mechanic`, `transition_type`, `transition_value`,
-     `text_greeting`, `text_chase`,
-     `reward_pool`,
-     `spawn_style`, `prop_entry`, `prop_count`, `prop_radius`,
-     `emotion`, `emotion_end`, `text_on_accept`, `text_on_complete`)
-VALUES
-(10, 1, 0, 0,
- 'witness', 'quest_complete', 1,
- 'Champion. Darkness stirs nearby. I bring a trial — three tasks. Will you face them?',
- 'Do not walk away. The enemy does not wait.',
- '',
- 'from_portal', 0, 0, 0.0,
- 'angry', 'victorious',
- 'I am ready.',
- 'Then prove it. Slay three of the enemy.'),
-(10, 2, 0, 0,
- 'kill', 'encounter_count', 3,
- 'Three enemies must fall. Any who threaten the innocent will do.',
- 'Do not stop. Three must die.',
- '',
- 'approaches', 0, 0, 0.0,
- 'victorious', 'happy',
- 'Understood.',
- 'Good. Now the beacon.'),
-(10, 3, 0, 0,
- 'activate', 'quest_complete', 1,
- 'A beacon has been placed nearby. Find it and activate it.',
- 'The beacon awaits. Do not delay.',
- '',
- 'approaches', 900103, 1, 25.0,
- 'neutral', 'happy',
- 'I will find it.',
- 'The signal is lit. One final task.'),
-(10, 4, 0, 0,
- 'courier', 'encounter_count', 1,
- 'You have proven yourself, champion. The trial is complete. Take your reward.',
- 'Do not go — the reward is yours.',
- 'herald_cache',
- 'waiting', 0, 0, 0.0,
- 'pleading', 'grateful',
- 'Well fought.',
- 'The herald gives a firm salute and steps back through the portal.');
+ 'happy', 'grateful',
+ 'Wonderful. Thank you!',
+ 'Light be with you, friend.');
